@@ -48,7 +48,7 @@ function PG(
 
   # Iteration set up
   g = ∇f(x⁺) #objInner/ quadratic model
-  k = 1
+  k = 0
   fk = f(x⁺)
   hk = h(x⁺)
 
@@ -57,7 +57,7 @@ function PG(
   tired = k ≥ maxIter
 
   if options.verbose != 0
-    @info @sprintf "%6s %8s %8s %7s %8s %7s" "iter" "f(x)" "h(x)" "‖∂ϕ‖" "ν" "‖x‖"
+  verbose ==0 & @info @sprintf "%6s %8s %8s %7s %8s %7s" "iter" "f(x)" "h(x)" "‖∂ϕ‖" "ν" "‖x‖"
   end
 
   while !(optimal || tired)
