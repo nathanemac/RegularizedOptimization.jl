@@ -22,7 +22,7 @@ where we then solver for x directly, z is the prox step in the new x,
 
 * `nlp::AbstractNLPModel`: a smooth optimization problem
 * `h::ProximableFunction`: a regularizer
-* `options::TRNCoptions`: a structure containing algorithmic parameters
+* `options::RegOptoptions`: a structure containing algorithmic parameters
 * `x0::AbstractVector`: an initial guess (in the second calling form)
 
 ### Keyword Arguments
@@ -53,7 +53,7 @@ function RS1(
   f::F,
   ∇f!::G,
   h::ProximableFunction,
-  options::TRNCoptions,
+  options::RegOptoptions,
   x0::AbstractVector;
   JtJ,
   JtF
@@ -102,7 +102,7 @@ function RS1(
     fk = f(z)
     hk = h(z)
     ν /= γ
-    k % ptf == 0 && @info @sprintf "%6d %8.1e %8.1e %7.1e %8.1e %7.1e " k fk hk err ν norm(xk) norm(xk - z)
+    k % ptf == 0 && @info @sprintf "%6d %8.1e %8.1e %7.1e %8.1e %7.1e %7.1e " k fk hk err ν norm(xk) norm(xk - z)
 
     err = norm(∇f!(∇fk, xk) + (z - x)/ν) #optimality conditions?
     optimal = err < ϵ && h.χ(xk) < h.Δ
@@ -123,7 +123,7 @@ function  RS2(
   ∇f!::G,
   h::ProximableFunction,
   χ::ProximableFunction,
-  options::TRNCoptions,
+  options::RegOptoptions,
   x0::AbstractVector;
   JtJ,
   JtF
@@ -165,7 +165,7 @@ function  RS2(
   optimal = false
   tired = k ≥ maxIter
 
-  verbose == 0 || @info @sprintf "%6s %8s %8s %7s %8s %7s" "iter" "f(x)" "h(x)" "‖∂ϕ‖" "ν" "‖x‖" "∑ᵢ ‖x - zᵢ‖"
+  verbose == 0 || @info @sprintf "%6s %8s %8s %7s %8s %7s %7s" "iter" "f(x)" "h(x)" "‖∂ϕ‖" "ν" "‖x‖" "∑ᵢ ‖x - zᵢ‖"
 
   while !(optimal || tired)
     k = k + 1
@@ -185,7 +185,7 @@ function  RS2(
     fk = f(z1)
     hk = h(z1)
     ν /= γ
-    k % ptf == 0 && @info @sprintf "%6d %8.1e %8.1e %7.1e %8.1e %7.1e " k fk hk err ν norm(xk) norm(xk - z1) + norm(xk - z2)
+    k % ptf == 0 && @info @sprintf "%6d %8.1e %8.1e %7.1e %8.1e %7.1e %7.1e " k fk hk err ν norm(xk) norm(xk - z1) + norm(xk - z2)
 
     err = norm(∇f!(∇fk, xk) + (z - x)/ν + (z - x)ν) #optimality conditions?
     optimal = err < ϵ && h.χ(xk) < h.Δ
