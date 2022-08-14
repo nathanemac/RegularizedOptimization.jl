@@ -149,11 +149,13 @@ function R2(
     mks = mk(s)
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
     
-    if neg_tol <= ξ <= ϵ^2
+    if neg_tol <= norm(s)/norm(xk) <= ϵ
       optimal = true
       ξ = abs(ξ)
       continue
     end
+
+
 
     ξ > 0 || error("R2: prox-gradient step should produce a decrease but ξ = $(ξ)")
     xkn .= xk .+ s
