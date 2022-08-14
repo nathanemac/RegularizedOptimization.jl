@@ -149,7 +149,7 @@ function R2(
     mks = mk(s)
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
     
-    if neg_tol <= norm(s)/norm(xk) <= ϵ
+    if norm(s)/norm(xk) <= ϵ
       optimal = true
       ξ = abs(ξ)
       continue
@@ -204,7 +204,7 @@ function R2(
       #! format: off
       @info @sprintf "%6d %8.1e %8.1e %7.1e %8s %7.1e %7.1e %7.1e" k fk hk sqrt(ξ) "" σk norm(xk) norm(s)
       #! format: on
-      @info "R2: terminating with √ξ = $(sqrt(ξ))"
+      @info "R2: terminating with norm(s)/norm(x) = $(norm(s)/norm(xk))"
     end
   end
 
