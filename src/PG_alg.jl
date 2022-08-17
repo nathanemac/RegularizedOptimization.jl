@@ -108,7 +108,7 @@ function PG(
     k += 1
     ∇fkn .= ∇fk .- ∇fkn .- (xk .- xkn) ./ ν
     ξ = norm(∇fkn)
-    optimal = ξ < ϵ
+    optimal = norm(xk - xkn)/norm(xkn) < ϵ
     tired = k ≥ maxIter || elapsed_time > maxTime
 
     if (verbose > 0) && (k % ptf == 0)
