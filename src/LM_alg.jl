@@ -158,7 +158,7 @@ function LM(
     ξ1 = fk + hk - mk1(s) + max(1, abs(fk + hk)) * 10 * eps()  # TODO: isn't mk(s) returned by subsolver?
     ξ1 > 0 || error("LM: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
 
-    if sqrt(ξ1) < ϵ
+    if norm(s)/norm(xk) < ϵ
       # the current xk is approximately first-order stationary
       optimal = true
       continue
@@ -234,7 +234,7 @@ function LM(
       #! format: off
       @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt(ξ1) sqrt(ξ1) "" σk norm(xk) norm(s) νInv
       #! format: on
-      @info "LM: terminating with √ξ1 = $(sqrt(ξ1))"
+      @info "LM: terminating with norm(s)/norm(xk) = $(norm(s)/norm(xk))"
     end
   end
   status = if optimal
