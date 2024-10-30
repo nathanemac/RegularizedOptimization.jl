@@ -4,7 +4,7 @@ import SolverCore.solve!
 
 mutable struct R2Solver{
   R <: Real,
-  G <: Union{ShiftedProximableFunction, Nothing},
+  G <: Union{ShiftedProximableFunction, InexactShiftedProximableFunction, Nothing},
   S <: AbstractVector{R},
 } <: AbstractOptimizationSolver
   xk::S
