@@ -75,6 +75,7 @@ function iR2N(
   α = options.α
   β = options.β
   σk = options.σk
+  dualGap = options.dualGap
 
   # store initial values of the subsolver_options fields that will be modified
   ν_subsolver = subsolver_options.ν
@@ -170,7 +171,7 @@ function iR2N(
     # s1 minimizes φ1(s) + ‖s‖² / 2 / ν + ψ(s) ⟺ s1 ∈ prox{νψ}(-ν∇φ1(0)).
 
     subsolver_options.ν = 1 / νInv
-    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν)
+    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν; dualGap=dualGap)
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
     ξ1 > 0 || error("R2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
     sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
@@ -188,8 +189,9 @@ function iR2N(
     end
     s1 = copy(s)
 
-  #  subsolver_options.ϵa = k == 1 ? 1.0e-1 : max(ϵ_subsolver, min(1.0e-2, ξ1 / 10))
     subsolver_options.ϵa = k == 1 ? 1.0e-3 : min(sqrt_ξ1_νInv ^ (1.5) , sqrt_ξ1_νInv * 1e-3) # 1.0e-5 default
+    subsolver_options.neg_tol = options.neg_tol
+    subsolver_options.dualGap = dualGap
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
     s, iter, _ = with_logger(subsolver_logger) do

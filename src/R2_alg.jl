@@ -200,6 +200,7 @@ function R2(
     η2 = options.η2,
     ν = options.ν,
     γ = options.γ,
+    dualGap = options.dualGap,
   )
 end
 
@@ -228,6 +229,7 @@ function R2(
     η2 = options.η2,
     ν = options.ν,
     γ = options.γ,
+    dualGap = options.dualGap,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -270,6 +272,7 @@ function R2(
     η2 = options.η2,
     ν = options.ν,
     γ = options.γ,
+    dualGap = options.dualGap,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -321,6 +324,7 @@ function SolverCore.solve!(
   η2::T = T(0.9),
   ν::T = eps(T)^(1 / 5),
   γ::T = T(3),
+  dualGap::Union{T, Nothing} = nothing,
 ) where {T, V}
   reset!(stats)
 
@@ -398,7 +402,7 @@ function SolverCore.solve!(
   φk(d) = dot(∇fk, d)
   mk(d)::T = φk(d) + ψ(d)::T
 
-  prox!(s, ψ, mν∇fk, ν)
+  prox!(s, ψ, mν∇fk, ν; dualGap = dualGap)
   mks = mk(s)
 
   ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
@@ -486,7 +490,7 @@ function SolverCore.solve!(
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
 
-    prox!(s, ψ, mν∇fk, ν)
+    prox!(s, ψ, mν∇fk, ν; dualGap = dualGap)
     mks = mk(s)
 
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()

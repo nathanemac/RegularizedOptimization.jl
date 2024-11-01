@@ -23,7 +23,7 @@ include("src/utils.jl")
 
 nlp = ADNLPModel(x -> (1-x[1])^2 + 100(x[1]-x[2]^2)^2, [-1., 1.])
 
-h1 = NormL2(1.0)
+h1 = NormL1(1.0)
 options = ROSolverOptions()
 res_r2n = R2N(nlp, h1, options)
 res_r2n.solution
@@ -33,8 +33,8 @@ options = ROSolverOptions()
 res_ir2n_1 = iR2N(nlp, h1, options)
 res_ir2n_1.solution
 
-hp = NormLp(1.0, 2.0)
-options = ROSolverOptions()
+hp = NormLp(1.0, 1.0)
+options = ROSolverOptions(neg_tol = 0.1, dualGap = 1e-7)
 res_ir2n_p = iR2N(nlp, hp, options)
 res_ir2n_p.solution
 
@@ -45,6 +45,24 @@ res_ir2n_p.solution
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# tests
 h = NormLp(0.1, 1.0)
 ψ = shifted(h, [1.39, -1.])
 shift!(ψ, [0.5, 1.5])

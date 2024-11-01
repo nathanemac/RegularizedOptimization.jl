@@ -115,23 +115,24 @@ function (ψ::ShiftedNormLp)(y::AbstractVector)
 end
 
 """
-    prox!(y::AbstractArray, ψ::ShiftedNormLp, q::AbstractArray, ν::Real; objGap=1e-5)
+    prox!(y, ψ::ShiftedNormLp, q, ν; dualGap=1e-5)
 
-Computes the proximity operator of a shifted Lp norm.
+Evaluates inexactly the proximity operator of a shifted Lp norm.
+The duality gap at the solution is guaranteed to be less than `dualGap`.
 
 Inputs:
     - `y`: Array in which to store the result.
     - `ψ`: ShiftedNormLp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `objGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
+    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
 """
 function prox!(
     y::AbstractArray,
     ψ::ShiftedNormLp,
     q::AbstractArray,
     ν::Real;
-    objGap::Real = 1e-5,
+    dualGap::Real = 1e-5,
 )
     n = length(y)
     ws = ProxTV.newWorkspace(n)
@@ -150,7 +151,7 @@ function prox!(
 
     positive = Int32(all(v -> v >= 0, y_shifted) ? 1 : 0)
 
-    ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, objGap)
+    ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap)
 
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -289,18 +290,19 @@ function (ψ::ShiftedNormTVp)(y::AbstractVector)
 end
 
 """
-    prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, σ::Real; objGap=1e-5)
+    prox!(y, ψ::ShiftedNormTVp, q, σ; dualGap=1e-5)
 
-Computes the proximity operator of a shifted TVp object.
+Evaluates inexactly the proximity operator of a shifted TVp norm.
+The duality gap at the solution is guaranteed to be less than `dualGap`.
 
 Inputs:
     - `y`: Array in which to store the result.
     - `ψ`: ShiftedNormTVp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `objGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
+    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
 
-Although `objGap` can be specified, the TVp proximity operator uses a fixed objective gap of `1e-5` as defined in the C++ code. A warning will be emitted the first time this function is called.
+Although `dualGap` can be specified, the TVp proximity operator uses a fixed objective gap of `1e-5` as defined in the C++ code. A warning will be emitted the first time this function is called.
 
 """
 function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real; kwargs...)
@@ -349,5 +351,38 @@ function shifted(h::Union{NormLp, NormTVp}, xk::AbstractVector)
         return ShiftedNormTVp(h, xk, zero(xk), false)
     else
         throw(ArgumentError("The function h must be either NormLp or NormTVp"))
+    end
+end
+
+"""
+    prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν; dualGap=nothing)
+
+Evaluates the proximity operator of a shifted regularizer, choosing between exact and inexact calculations based on the type of `ψ` and the presence of `dualGap`.
+
+- If `ψ` is a `ShiftedProximableFunction` and `dualGap` is not provided, computes the **exact** proximity operator.
+- If `ψ` is an `InexactShiftedProximableFunction` and `dualGap` is provided, computes the **inexact** proximity operator with a guaranteed duality gap below `dualGap`.
+
+Inputs:
+    - `y`: Array in which to store the result.
+    - `ψ`: Either a `ShiftedProximableFunction` (for exact prox) or an `InexactShiftedProximableFunction` (for inexact prox).
+    - `q`: Vector to which the proximity operator is applied.
+    - `ν`: Scaling factor.
+    - `dualGap`: Desired quality of the solution in terms of duality gap for inexact prox (default is `nothing`, indicating exact prox).
+
+Outputs:
+    - The solution is stored in the input vector `y`, which is also returned.
+
+Errors:
+    - Raises an error if `ψ` is of type `ShiftedProximableFunction` and `dualGap` is provided, or if `ψ` is of type `InexactShiftedProximableFunction` and `dualGap` is not provided.
+"""
+function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν; dualGap=nothing)
+    if dualGap === nothing && ψ isa ShiftedProximableFunction
+        # Call to exact prox!() if dualGap is not defined
+        return prox!(y, ψ, q, ν)
+    elseif dualGap !== nothing && ψ isa InexactShiftedProximableFunction
+        # Call to inexact prox!() if dualGap is defined
+        return prox!(y, ψ, q, ν; dualGap=dualGap)
+    else
+        error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!")
     end
 end

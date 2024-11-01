@@ -18,6 +18,7 @@ mutable struct ROSolverOptions{R}
   θ::R  # step length factor in relation to Hessian norm
   β::R  # TR size as factor of first PG step
   reduce_TR::Bool
+  dualGap::Union{R, Nothing} # duality gap tolerance for inexact prox computation
 
   function ROSolverOptions{R}(;
     ϵa::R = √eps(R),
@@ -37,6 +38,7 @@ mutable struct ROSolverOptions{R}
     θ::R = eps(R)^(1 / 5),
     β::R = 1 / eps(R),
     reduce_TR::Bool = true,
+    dualGap::Union{R, Nothing} = nothing,
   ) where {R <: Real}
     @assert ϵa ≥ 0
     @assert ϵr ≥ 0
@@ -53,6 +55,7 @@ mutable struct ROSolverOptions{R}
     @assert γ > 1
     @assert θ > 0
     @assert β ≥ 1
+    @assert (isnothing(dualGap) || dualGap ≥ 0)
     return new{R}(
       ϵa,
       ϵr,
@@ -71,6 +74,7 @@ mutable struct ROSolverOptions{R}
       θ,
       β,
       reduce_TR,
+      dualGap
     )
   end
 end
