@@ -5,12 +5,12 @@ using ProximalOperators
 using RegularizedProblems
 using ShiftedProximalOperators
 using SolverCore
-using TSVD
 using LinearAlgebra
 using Logging
 using Printf
 using ADNLPModels
 using ProxTV
+using Arpack
 
 # include("src/utils.jl")
 include("src/input_struct.jl")
@@ -34,7 +34,7 @@ res_ir2n_1 = iR2N(nlp, h1, options)
 res_ir2n_1.solution
 
 hp = NormLp(1.0, 1.0)
-options = ROSolverOptions(neg_tol = 0.1, dualGap = 1e-7)
+options = ROSolverOptions(neg_tol = 0.001, dualGap = 1e-7)
 res_ir2n_p = iR2N(nlp, hp, options)
 res_ir2n_p.solution
 
