@@ -33,13 +33,15 @@ options = ROSolverOptions()
 res_ir2n_1 = iR2N(nlp, h1, options)
 res_ir2n_1.solution
 
-hp = NormLp(1.0, 1.0)
-options = ROSolverOptions(neg_tol = 0.001, dualGap = 1e-7)
+hp = NormLp(1.0, 1.14)
+options = ROSolverOptions(neg_tol = 0.001, dualGap = 1e-9)
 res_ir2n_p = iR2N(nlp, hp, options)
 res_ir2n_p.solution
 
-# TODO next: understand why neg_tol hits with p ≠ something known
-
+hp = NormTVp(1.0, 1.14)
+options = ROSolverOptions(neg_tol = 0.0001, dualGap = 1e-6)
+res_ir2n_p = iR2N(nlp, hp, options)
+res_ir2n_p.solution
 
 
 

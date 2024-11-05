@@ -29,6 +29,43 @@ struct NormLp{T1,T2}
     end
 end
 
+"""
+    prox!(y, h::NormLp, q, ν; dualGap=1e-5)
+
+Evaluates inexactly the proximity operator of a Lp norm object.
+The duality gap at the solution is guaranteed to be less than `dualGap`.
+
+Inputs:
+    - `y`: Array in which to store the result.
+    - `h`: NormLp object.
+    - `q`: Vector to which the proximity operator is applied.
+    - `ν`: Scaling factor.
+    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
+"""
+function prox!(
+        y::AbstractArray,
+        h::NormLp,
+        q::AbstractArray,
+        ν::Real;
+        dualGap::Real = 1e-5,
+)
+    
+    n = length(y)
+    ws = ProxTV.newWorkspace(n)
+
+    # Allocate info array (based on C++ code)
+    info = zeros(Float64, 3)
+
+    # Adjust lambda to account for ν (multiply λ by ν)
+    lambda_scaled = h.λ * ν
+
+    positive = Int32(all(v -> v >= 0, y) ? 1 : 0)
+
+    ProxTV.PN_LPp(q, lambda_scaled, y, info, n, h.p, ws, positive, dualGap)
+
+    return y
+end
+
 # Allows NormLp objects to be called as functions
 function (h::NormLp)(x::AbstractArray)
     return h.λ * ProxTV.LPnorm(x, length(x), h.p)
@@ -204,6 +241,41 @@ function TVp_norm(x::AbstractArray, p::Real)
     return tvp_sum^(1 / p)
 end
 
+"""
+    prox!(y, h::NormTVp, q, ν; dualGap=1e-5)
+
+Evaluates inexactly the proximity operator of a TVp norm object.
+The duality gap at the solution is guaranteed to be less than `dualGap`.
+
+Inputs:
+    - `y`: Array in which to store the result.
+    - `h`: NormTVp object.
+    - `q`: Vector to which the proximity operator is applied.
+    - `ν`: Scaling factor.
+    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
+"""
+function prox!(
+        y::AbstractArray,
+        h::NormTVp,
+        q::AbstractArray,
+        ν::Real;
+        dualGap::Real = 1e-5,
+)
+    
+    n = length(y)
+    ws = ProxTV.newWorkspace(n)
+
+    # Allocate info array (based on C++ code)
+    info = zeros(Float64, 3)
+
+    # Adjust lambda to account for ν (multiply λ by ν)
+    lambda_scaled = h.λ * ν
+
+    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws)
+
+    return y
+end
+
 # Allows NormTVp objects to be called as functions
 function (h::NormTVp)(x::AbstractArray)
     return h.λ * TVp_norm(x, h.p)
@@ -322,7 +394,7 @@ function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real;
     x = similar(y)
 
     # Call the TV function from ProxTV package
-    ProxTV.TV(y_shifted, lambda_scaled, x, info, Int32(n), ψ.h.p, ws)
+    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws)
 
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -383,6 +455,7 @@ function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableF
         # Call to inexact prox!() if dualGap is defined
         return prox!(y, ψ, q, ν; dualGap=dualGap)
     else
-        error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!")
+        error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!.
+        Please provide dualGap::Real for InexactShiftedProximableFunction or omit it for ShiftedProximableFunction.")
     end
 end

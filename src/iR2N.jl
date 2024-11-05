@@ -101,7 +101,7 @@ function iR2N(
   #σk = max(1 / options.ν, σmin) #SVM
   xk = copy(x0)
   hk = h(xk[selected])
-  if hk == Inf # TODO : implement this part (no existing function prox! for h, only for ψ)
+  if hk == Inf
     verbose > 0 && @info "R2N: finding initial guess where nonsmooth term is finite"
     prox!(xk, h, x0, one(eltype(x0)))
     hk = h(xk[selected])
