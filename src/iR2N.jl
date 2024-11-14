@@ -102,11 +102,11 @@ function iR2N(
   xk = copy(x0)
   hk = h(xk[selected])
   if hk == Inf
-    verbose > 0 && @info "R2N: finding initial guess where nonsmooth term is finite"
+    verbose > 0 && @info "iR2N: finding initial guess where nonsmooth term is finite"
     prox!(xk, h, x0, one(eltype(x0)))
     hk = h(xk[selected])
     hk < Inf || error("prox computation must be erroneous")
-    verbose > 0 && @debug "R2N: found point where h has value" hk
+    verbose > 0 && @debug "iR2N: found point where h has value" hk
   end
   hk == -Inf && error("nonsmooth term is not proper")
 
@@ -121,7 +121,7 @@ function iR2N(
   Complex_hist = zeros(Int, maxIter)
   if verbose > 0
     #! format: off
-    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "R2N"
+    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "iR2N"
     #! format: on
   end
 
@@ -174,7 +174,7 @@ function iR2N(
     subsolver_options.ν = 1 / νInv
     prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν; dualGap=dualGap)
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
-    ξ1 > 0 || error("R2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
+    ξ1 > 0 || error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
     sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
 
     if ξ1 ≥ 0 && k == 1
@@ -183,7 +183,7 @@ function iR2N(
       ϵ_subsolver += ϵ_increment
     end
 
-    if sqrt_ξ1_νInv < ϵ # TODO : change this with κξ
+    if sqrt_ξ1_νInv < ϵ # TODO : change this with κξ : sqrt_ξ1_νInv < ϵ * sqrt(κξ)
       # the current xk is approximately first-order stationary
       optimal = true
       continue
@@ -221,16 +221,16 @@ function iR2N(
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
     if (ξ ≤ 0 || isnan(ξ))
-      error("R2N: failed to compute a step: ξ = $ξ")
+      error("iR2N: failed to compute a step: ξ = $ξ")
     end
 
     ρk = Δobj / Δmod
 
-    R2N_stat = (η2 ≤ ρk < Inf) ? "↗" : (ρk < η1 ? "↘" : "=")
+    iR2N_stat = (η2 ≤ ρk < Inf) ? "↗" : (ρk < η1 ? "↘" : "=")
 
     if (verbose > 0) && ((k % ptf == 0) || (k == 1))
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(ξ1) ρk σk norm(xk) norm(s) λmax R2N_stat
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(ξ1) ρk σk norm(xk) norm(s) λmax iR2N_stat
       #! format: off
     end
 
@@ -272,7 +272,7 @@ function iR2N(
       #! format: off
       @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(ξ1) "" σk norm(xk) norm(s) λmax
       #! format: on
-      @info "R2N: terminating with √(ξ1/ν) = $(sqrt_ξ1_νInv)"
+      @info "iR2N: terminating with √(ξ1/ν) = $(sqrt_ξ1_νInv)"
     end
   end
 

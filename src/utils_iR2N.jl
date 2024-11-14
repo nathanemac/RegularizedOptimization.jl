@@ -1,8 +1,5 @@
 abstract type InexactShiftedProximableFunction end
 
-
-
-
 ### NormLp and ShiftedNormLp Implementation
 
 """
@@ -10,7 +7,7 @@ abstract type InexactShiftedProximableFunction end
 
 Represents the Lp norm with parameter `p` and scaling factor `λ`.
 """
-struct NormLp{T1,T2}
+struct NormLp{T1,T2} 
     λ::T1
     p::T2
 
