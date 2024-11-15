@@ -76,6 +76,7 @@ function iR2N(
   β = options.β
   σk = options.σk
   dualGap = options.dualGap
+  κξ = options.κξ
 
   # store initial values of the subsolver_options fields that will be modified
   ν_subsolver = subsolver_options.ν
@@ -121,7 +122,7 @@ function iR2N(
   Complex_hist = zeros(Int, maxIter)
   if verbose > 0
     #! format: off
-    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "iR2N"
+    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "dualGap" "iR2N"
     #! format: on
   end
 
@@ -174,6 +175,12 @@ function iR2N(
     subsolver_options.ν = 1 / νInv
     prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν; dualGap=dualGap)
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
+
+    # check condition : dualGap ≤ (1-κξ) / κξ * ξ1 #TODO : add a callback instead. 
+    if dualGap > (1-κξ) / κξ * ξ1
+      dualGap = (1-κξ) / κξ * ξ1
+    end
+
     ξ1 > 0 || error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
     sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
 
@@ -183,7 +190,7 @@ function iR2N(
       ϵ_subsolver += ϵ_increment
     end
 
-    if sqrt_ξ1_νInv < ϵ # TODO : change this with κξ : sqrt_ξ1_νInv < ϵ * sqrt(κξ)
+    if sqrt_ξ1_νInv < ϵ * sqrt(κξ)
       # the current xk is approximately first-order stationary
       optimal = true
       continue
@@ -230,7 +237,7 @@ function iR2N(
 
     if (verbose > 0) && ((k % ptf == 0) || (k == 1))
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(ξ1) ρk σk norm(xk) norm(s) λmax iR2N_stat
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(ξ1) ρk σk norm(xk) norm(s) λmax dualGap iR2N_stat
       #! format: off
     end
 
@@ -270,7 +277,7 @@ function iR2N(
       @info @sprintf "%6d %8s %8.1e %8.1e" k "" fk hk
     elseif optimal
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(ξ1) "" σk norm(xk) norm(s) λmax
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(ξ1) "" σk norm(xk) norm(s) λmax dualGap
       #! format: on
       @info "iR2N: terminating with √(ξ1/ν) = $(sqrt_ξ1_νInv)"
     end

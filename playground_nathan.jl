@@ -34,8 +34,8 @@ res_r2n = R2N(nlp, h1, options)
 res_r2n.solution
 
 
-options = ROSolverOptions(dualGap = 1e-6)
-hp = NormLp(1.0, 1.0)
+options = ROSolverOptions(dualGap = 1e-8)
+hp = NormLp(1.0, 1.59)
 res_ir2n_1 = iR2N(nlp, hp, options)
 res_ir2n_1.solution
 
@@ -56,11 +56,11 @@ model, nls_model, sol = bpdn_model()
 bpdn_bfgs = LBFGSModel(model)
 
 h1 = NormL1(0.01)
-options = ROSolverOptions(verbose=2, ϵa = 1e-6, ϵr = 1e-6)
+options = ROSolverOptions(verbose=100, ϵa = 1e-6, ϵr = 1e-6)
 res_r2n = R2N(bpdn_bfgs, h1, options)
 
 h1p = NormLp(0.01, 1.0)
-options = ROSolverOptions(verbose=2, ϵa = 1e-6, ϵr = 1e-6, dualGap = 1e-6)
+options = ROSolverOptions(verbose=100, ϵa = 1e-6, ϵr = 1e-6, dualGap = 1e-6)
 res_ir2n = iR2N(bpdn_bfgs, h1p, options)
 
 h1p =  NormLp(0.01, 1.0)
