@@ -369,8 +369,8 @@ function SolverCore.solve!(
 
   if verbose > 0
     @info log_header(
-      [:iter, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :arrow],
-      [Int, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Char],
+      [:iter, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :dualgap, :arrow],
+      [Int, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Char],
       hdr_override = Dict{Symbol, String}(   # TODO: Add this as constant dict elsewhere
         :iter => "iter",
         :fx => "f(x)",
@@ -380,6 +380,7 @@ function SolverCore.solve!(
         :σ => "σ",
         :normx => "‖x‖",
         :norms => "‖s‖",
+        :objgap => "dualGap_R2",
         :arrow => " ",
       ),
       colsep = 1,
@@ -439,7 +440,7 @@ function SolverCore.solve!(
   callback(nlp, solver, stats)
 
   done = stats.status != :unknown
-
+  
   while !done
 
     # Update xk, sigma_k
@@ -463,6 +464,7 @@ function SolverCore.solve!(
           σk,
           norm(xk),
           norm(s),
+          dualGap,
           (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
         ],
         colsep = 1,
@@ -506,7 +508,7 @@ function SolverCore.solve!(
     s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
 
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
-    solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol)
+    solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
     (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
       error("R2: prox-gradient step should produce a decrease but ξ = $(ξ)")
 
@@ -541,6 +543,7 @@ function SolverCore.solve!(
         σk,
         norm(xk),
         norm(s),
+        dualGap,
         (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
       ],
       colsep = 1,

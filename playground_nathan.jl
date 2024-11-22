@@ -59,9 +59,9 @@ h1 = NormL1(0.01)
 options = ROSolverOptions(verbose=100, ϵa = 1e-6, ϵr = 1e-6)
 res_r2n = R2N(bpdn_bfgs, h1, options)
 
-h1p = NormTVp(0.01, 1.54)
-options = ROSolverOptions(verbose=100, ϵa = 1e-5, ϵr = 1e-5, dualGap = 1e-4)
-res_ir2n = iR2N(bpdn_bfgs, h1p, options)
+h1p = NormLp(0.01, 1.54)
+options = ROSolverOptions(verbose=100, ϵa = 1e-5, ϵr = 1e-5, dualGap = 1e-12)
+res_ir2n = iR2N(bpdn_bfgs, h1p, options, subsolver_logger = Logging.global_logger())
 
 isapprox(res_r2n.solution, res_ir2n.solution, atol=1e-6)
 isapprox(res_r2n.solution, res_ir2n_p.solution, atol=1e-5)

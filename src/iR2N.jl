@@ -201,6 +201,7 @@ function iR2N(
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
     subsolver_options.κξ = κξ
+    subsolver_options.verbose = 50
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
     s, iter, _ = with_logger(subsolver_logger) do
