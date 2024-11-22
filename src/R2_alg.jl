@@ -201,6 +201,7 @@ function R2(
     ν = options.ν,
     γ = options.γ,
     dualGap = options.dualGap,
+    κξ = options.κξ,
   )
 end
 
@@ -230,6 +231,7 @@ function R2(
     ν = options.ν,
     γ = options.γ,
     dualGap = options.dualGap,
+    κξ = options.κξ,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -273,6 +275,7 @@ function R2(
     ν = options.ν,
     γ = options.γ,
     dualGap = options.dualGap,
+    κξ = options.κξ,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -325,6 +328,7 @@ function SolverCore.solve!(
   ν::T = eps(T)^(1 / 5),
   γ::T = T(3),
   dualGap::Union{T, Nothing} = nothing,
+  κξ::T = T(3 / 4),
 ) where {T, V}
   reset!(stats)
 
@@ -407,10 +411,13 @@ function SolverCore.solve!(
 
   ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
+  # check condition : dualGap ≤ (1-κξ) / κξ * ξ
+  s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
+
   sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
   atol += rtol * sqrt_ξ_νInv # make stopping test absolute and relative
 
-  solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol)
+  solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
   (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
     error("R2: prox-gradient step should produce a decrease but ξ = $(ξ)")
 
@@ -494,6 +501,10 @@ function SolverCore.solve!(
     mks = mk(s)
 
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
+
+    # check condition : dualGap ≤ (1-κξ) / κξ * ξ
+    s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
+
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
     solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol)
     (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&

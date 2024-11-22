@@ -767,9 +767,9 @@ version = "3.100.2+0"
 
 [[deps.LAPACK_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "libblastrampoline_jll"]
-git-tree-sha1 = "1b25c30fa49db281be615793e0f85282a8f22822"
+git-tree-sha1 = "47a6ccfc4b78494669cd7c502ba112ee2b24eb45"
 uuid = "51474c39-65e3-53ba-86ba-03b1b862ec14"
-version = "3.12.0+2"
+version = "3.12.0+3"
 
 [[deps.LERC_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1244,9 +1244,9 @@ uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 
 [[deps.ProxTV]]
 deps = ["JuliaFormatter", "LAPACK_jll", "LinearAlgebra", "OpenBLAS32_jll", "proxTV_jll"]
-git-tree-sha1 = "c318a023de203674079a1c4c6abfb97236aa2792"
+git-tree-sha1 = "02a881c22edcfc38019307228d21353a37569f56"
 uuid = "925ea013-038b-5ab6-a1ab-e0849925e528"
-version = "0.1.0"
+version = "0.2.0"
 
 [[deps.ProximalCore]]
 deps = ["LinearAlgebra"]
@@ -2003,9 +2003,9 @@ version = "17.4.0+0"
 
 [[deps.proxTV_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "libblastrampoline_jll"]
-git-tree-sha1 = "de5cf61a74cd6b7465d6000d8839ae6e79110c81"
+git-tree-sha1 = "d62f019c284d3024fbce22a78e47a201dc3b4bd7"
 uuid = "700117f8-5dbb-54dd-9908-6f3eb0e21f87"
-version = "3.3.2+0"
+version = "3.4.0+0"
 
 [[deps.x264_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]

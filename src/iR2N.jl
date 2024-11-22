@@ -176,13 +176,13 @@ function iR2N(
     prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν; dualGap=dualGap)
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
 
-    # check condition : dualGap ≤ (1-κξ) / κξ * ξ1 #TODO : add a callback instead. 
-    if dualGap > (1-κξ) / κξ * ξ1
-      dualGap = (1-κξ) / κξ * ξ1
-    end
+    # check condition : dualGap ≤ (1-κξ) / κξ * ξ1
+    s, dualGap, ξ1 = check_condition_xi!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, κξ, ξ1, mk1, hk, k, dualGap)
 
-    ξ1 > 0 || error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
     sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
+    (ξ1 < 0 && sqrt_ξ1_νInv > neg_tol) && 
+      error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
+
 
     if ξ1 ≥ 0 && k == 1
       ϵ_increment = ϵr * sqrt_ξ1_νInv
@@ -200,6 +200,7 @@ function iR2N(
     subsolver_options.ϵa = k == 1 ? 1.0e-3 : min(sqrt_ξ1_νInv ^ (1.5) , sqrt_ξ1_νInv * 1e-3) # 1.0e-5 default
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
+    subsolver_options.κξ = κξ
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
     s, iter, _ = with_logger(subsolver_logger) do

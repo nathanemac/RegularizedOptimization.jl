@@ -181,12 +181,19 @@ function prox!(
     lambda_scaled = ψ.h.λ * ν
 
     # Allocate the x vector to store the intermediate solution
-    x = similar(y)
+    x = zeros(n)
 
     positive = Int32(all(v -> v >= 0, y_shifted) ? 1 : 0)
 
-    ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap)
-
+    if ψ.h.p == 1
+        ProxTV.PN_LP1(y_shifted, lambda_scaled, x, info, n)
+    elseif ψ.h.p == 2
+        ProxTV.PN_LP2(y_shifted, lambda_scaled, x, info, n)
+    elseif ψ.h.p == Inf
+        ProxTV.PN_LPi(y_shifted, lambda_scaled, x, info, n, ws)
+    else
+        ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap)
+    end
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
 
@@ -268,7 +275,7 @@ function prox!(
     # Adjust lambda to account for ν (multiply λ by ν)
     lambda_scaled = h.λ * ν
 
-    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws)
+    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws, objGap = dualGap)
 
     return y
 end
@@ -374,7 +381,7 @@ Inputs:
 Although `dualGap` can be specified, the TVp proximity operator uses a fixed objective gap of `1e-5` as defined in the C++ code. A warning will be emitted the first time this function is called.
 
 """
-function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real; kwargs...)
+function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real; dualGap=1e-5)
     n = length(y)
     ws = ProxTV.newWorkspace(n)
 
@@ -391,7 +398,7 @@ function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real;
     x = similar(y)
 
     # Call the TV function from ProxTV package
-    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws)
+    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, objGap = dualGap)
 
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -455,4 +462,15 @@ function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableF
         error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!.
         Please provide dualGap::Real for InexactShiftedProximableFunction or omit it for ShiftedProximableFunction.")
     end
+end
+
+
+function check_condition_xi!(s, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν, κξ, ξ, mk, hk, k, dualGap)
+    while dualGap > (1-κξ) / κξ * ξ
+        # @info " -> iR2N: dualGap condition not satisfied, recomputing prox at iteration $k."
+        dualGap = (1-κξ) / κξ * ξ
+        prox!(s, ψ, q, ν; dualGap=dualGap)
+        ξ = hk - mk(s) + max(1, abs(hk)) * 10 * eps()
+    end
+    return s, dualGap, ξ
 end
