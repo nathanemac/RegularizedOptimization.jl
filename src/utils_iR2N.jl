@@ -43,7 +43,9 @@ function prox!(
         y::AbstractArray,
         h::NormLp,
         q::AbstractArray,
-        ν::Real;
+        ν::Real,
+        ctx_ptr::Ptr{Cvoid},
+        callback::Ptr{Cvoid};
         dualGap::Real = 1e-5,
 )
     
@@ -58,7 +60,7 @@ function prox!(
 
     positive = Int32(all(v -> v >= 0, y) ? 1 : 0)
 
-    ProxTV.PN_LPp(q, lambda_scaled, y, info, n, h.p, ws, positive, dualGap)
+    ProxTV.PN_LPp(q, lambda_scaled, y, info, n, h.p, ws, positive, dualGap, ctx_ptr, callback)
 
     return y
 end
@@ -165,7 +167,9 @@ function prox!(
     y::AbstractArray,
     ψ::ShiftedNormLp,
     q::AbstractArray,
-    ν::Real;
+    ν::Real,
+    ctx_ptr::Ptr{Cvoid},
+    callback::Ptr{Cvoid};
     dualGap::Real = 1e-5,
 )
     n = length(y)
@@ -192,7 +196,7 @@ function prox!(
     elseif ψ.h.p == Inf
         ProxTV.PN_LPi(y_shifted, lambda_scaled, x, info, n, ws)
     else
-        ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap)
+        ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap, ctx_ptr, callback)
     end
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -262,7 +266,9 @@ function prox!(
         y::AbstractArray,
         h::NormTVp,
         q::AbstractArray,
-        ν::Real;
+        ν::Real,
+        ctx_ptr::Ptr{Cvoid},
+        callback::Ptr{Cvoid};
         dualGap::Real = 1e-5,
 )
     
@@ -275,7 +281,7 @@ function prox!(
     # Adjust lambda to account for ν (multiply λ by ν)
     lambda_scaled = h.λ * ν
 
-    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws, objGap = dualGap)
+    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws, ctx_ptr, callback, objGap = dualGap)
 
     return y
 end
@@ -381,7 +387,7 @@ Inputs:
 Although `dualGap` can be specified, the TVp proximity operator uses a fixed objective gap of `1e-5` as defined in the C++ code. A warning will be emitted the first time this function is called.
 
 """
-function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real; dualGap=1e-5)
+function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real, ctx_ptr::Ptr{Cvoid}, callback::Ptr{Cvoid}; dualGap=1e-5)
     n = length(y)
     ws = ProxTV.newWorkspace(n)
 
@@ -398,7 +404,7 @@ function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real;
     x = similar(y)
 
     # Call the TV function from ProxTV package
-    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, objGap = dualGap)
+    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, ctx_ptr, callback, objGap = dualGap)
 
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -451,20 +457,20 @@ Outputs:
 Errors:
     - Raises an error if `ψ` is of type `ShiftedProximableFunction` and `dualGap` is provided, or if `ψ` is of type `InexactShiftedProximableFunction` and `dualGap` is not provided.
 """
-function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν; dualGap=nothing)
+function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν, ctx_ptr, callback; dualGap=nothing)
     if dualGap === nothing && ψ isa ShiftedProximableFunction
         # Call to exact prox!() if dualGap is not defined
         return prox!(y, ψ, q, ν)
     elseif dualGap !== nothing && ψ isa InexactShiftedProximableFunction
         # Call to inexact prox!() if dualGap is defined
-        return prox!(y, ψ, q, ν; dualGap=dualGap)
+        return prox!(y, ψ, q, ν, ctx_ptr, callback; dualGap=dualGap)
     else
         error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!.
         Please provide dualGap::Real for InexactShiftedProximableFunction or omit it for ShiftedProximableFunction.")
     end
 end
 
-
+# Outdated function
 function check_condition_xi!(s, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν, κξ, ξ, mk, hk, k, dualGap)
     while dualGap > (1-κξ) / κξ * ξ
         # @info " -> iR2N: dualGap condition not satisfied, recomputing prox at iteration $k."
@@ -474,3 +480,32 @@ function check_condition_xi!(s, ψ::Union{InexactShiftedProximableFunction, Shif
     end
     return s, dualGap, ξ
 end
+
+
+############################################################################################################
+########################## CALLBACK FUNCTION ##########################
+# Structure for callback function in iR2N
+mutable struct AlgorithmContextCallback
+    hk::Float64
+    mk::Function
+end
+
+function julia_callback(s_ptr::Ptr{Cdouble}, s_length::Csize_t, delta_k::Cdouble, ctx_ptr::Ptr{Cvoid})::Cint
+    # Convertir s_ptr en vecteur Julia
+    s_k = unsafe_wrap(Vector{Float64}, s_ptr, s_length)
+    
+    # Get context from pointer
+    context = unsafe_pointer_to_objref(ctx_ptr)::AlgorithmContext
+    
+    # compute ξk
+    ξk = context.hk - context.mk(s_k) + max(1, abs(context.hk)) * 10 * eps()
+    
+    # Compute condition according to convergence analysis
+    condition = delta_k ≤ (1 - context.κξ) / context.κξ * ξk
+    
+    # Retourner le résultat
+    return condition ? 1 : 0
+end
+
+callback_pointer = @cfunction(julia_callback, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
+

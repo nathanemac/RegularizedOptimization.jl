@@ -358,7 +358,7 @@ function SolverCore.solve!(
   # initialize parameters
   improper = false
   hk = @views h(xk[selected])
-  if hk == Inf
+  if hk == Inf # TODO 
     verbose > 0 && @info "R2: finding initial guess where nonsmooth term is finite"
     prox!(xk, h, xk, one(eltype(x0)))
     hk = @views h(xk[selected])
@@ -407,13 +407,18 @@ function SolverCore.solve!(
   φk(d) = dot(∇fk, d)
   mk(d)::T = φk(d) + ψ(d)::T
 
-  prox!(s, ψ, mν∇fk, ν; dualGap = dualGap)
+  # prepare callback context and pointer to callback function
+  context = AlgorithmContextCallback(hk, mk)
+  ctx_ptr = pointer_from_objref(context)
+  callback = callback_pointer
+
+  prox!(s, ψ, mν∇fk, ν, ctx_ptr, callback; dualGap = dualGap)
   mks = mk(s)
 
   ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
   # check condition : dualGap ≤ (1-κξ) / κξ * ξ
-  s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
+  # s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
 
   sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
   atol += rtol * sqrt_ξ_νInv # make stopping test absolute and relative
@@ -499,13 +504,18 @@ function SolverCore.solve!(
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
 
-    prox!(s, ψ, mν∇fk, ν; dualGap = dualGap)
+    # prepare callback context and pointer to callback function
+    context = AlgorithmContextCallback(hk, mk)
+    ctx_ptr = pointer_from_objref(context)
+    callback = callback_pointer
+
+    prox!(s, ψ, mν∇fk, ν, ctx_ptr, callback; dualGap = dualGap)
     mks = mk(s)
 
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
     # check condition : dualGap ≤ (1-κξ) / κξ * ξ
-    s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
+    # s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
 
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
     solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)

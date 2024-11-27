@@ -102,7 +102,7 @@ function iR2N(
   #σk = max(1 / options.ν, σmin) #SVM
   xk = copy(x0)
   hk = h(xk[selected])
-  if hk == Inf
+  if hk == Inf # TODO 
     verbose > 0 && @info "iR2N: finding initial guess where nonsmooth term is finite"
     prox!(xk, h, x0, one(eltype(x0)))
     hk = h(xk[selected])
@@ -173,7 +173,16 @@ function iR2N(
     # s1 minimizes φ1(s) + ‖s‖² / 2 / ν + ψ(s) ⟺ s1 ∈ prox{νψ}(-ν∇φ1(0)).
 
     subsolver_options.ν = 1 / νInv
-    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν; dualGap=dualGap)
+    
+    # prepare callback context and pointer to callback function
+    context = AlgorithmContextCallback(hk, mk)
+    ctx_ptr = pointer_from_objref(context)
+    callback = callback_pointer
+
+    # call prox computation
+    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, ctx_ptr, callback; dualGap=dualGap)
+
+
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
 
     # check condition : dualGap ≤ (1-κξ) / κξ * ξ1
