@@ -1,6 +1,5 @@
 export iR2N
-import ShiftedProximalOperators: shifted, shift!, prox!
-import ProximalOperators: prox!
+import ProxTV: shifted, shift!, prox!
 """
 iR2N(nlp, h, χ, options; kwargs...)
 
@@ -35,7 +34,7 @@ The Hessian is accessed as an abstract operator and need not be the exact Hessia
 * `subsolver_logger::AbstractLogger`: a logger to pass to the subproblem solver (default: the null logger)
 * `subsolver`: the procedure used to compute a step (`PG` or `R2`)
 * `subsolver_options::ROSolverOptions`: default options to pass to the subsolver (default: all default options)
-* `selected::AbstractVector{<:Integer}`: (default `1:f.meta.nvar`).
+* `selected::AbstractVector{<:Integer}`: (default `1:f.meta.nvar`),
 
 ### Return values
 
@@ -48,10 +47,9 @@ function iR2N(
   f::AbstractNLPModel,
   h::H,
   options::ROSolverOptions{R};
-  inexact_prox::Bool = false,
   x0::AbstractVector = f.meta.x0,
   subsolver_logger::Logging.AbstractLogger = Logging.NullLogger(),
-  subsolver = R2,
+  subsolver = iR2,
   subsolver_options = ROSolverOptions(ϵa = options.ϵa),
   Mmonotone::Int = 0, 
   selected::AbstractVector{<:Integer} = 1:(f.meta.nvar),
@@ -77,6 +75,9 @@ function iR2N(
   σk = options.σk
   dualGap = options.dualGap
   κξ = options.κξ
+
+  # initialize callback and pointer to callback function
+  options.callback_pointer = @cfunction(default_prox_callback, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
 
   # store initial values of the subsolver_options fields that will be modified
   ν_subsolver = subsolver_options.ν
@@ -114,7 +115,7 @@ function iR2N(
   xkn = similar(xk)
   s = zero(xk)
 
-  ψ = has_bounds(f) ? shifted(h, xk, l_bound - xk, u_bound - xk, selected) : shifted(h, xk) # TODO : implement shifted bounds for ineexact prox 
+  ψ = has_bounds(f) ? shifted(h, xk, l_bound - xk, u_bound - xk, selected) : shifted(h, xk) # TODO : implement shifted bounds for inexact prox 
 
   Fobj_hist = zeros(maxIter)
   Hobj_hist = zeros(maxIter)
@@ -174,22 +175,20 @@ function iR2N(
 
     subsolver_options.ν = 1 / νInv
     
-    # prepare callback context and pointer to callback function
-    context = AlgorithmContextCallback(hk, mk)
-    ctx_ptr = pointer_from_objref(context)
-    callback = callback_pointer
-
+    # prepare callback and pointer to callback function
+    context = AlgorithmContextCallback(hk, mk1, κξ, ψ.xk + ψ.sj, zeros(length(xk)), dualGap)
+    
     # call prox computation
-    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, ctx_ptr, callback; dualGap=dualGap)
-
+    prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, context, options.callback_pointer)
 
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
 
     # check condition : dualGap ≤ (1-κξ) / κξ * ξ1
-    s, dualGap, ξ1 = check_condition_xi!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, κξ, ξ1, mk1, hk, k, dualGap)
+    # s, dualGap, ξ1 = check_condition_xi!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, κξ, ξ1, mk1, hk, k, dualGap)
+    sqrt_ξ1_νInv = ξ1 ≥ 0 ? sqrt(ξ1 * νInv) : sqrt(-ξ1 * νInv)
 
-    sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
-    (ξ1 < 0 && sqrt_ξ1_νInv > neg_tol) && 
+    # sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
+    (ξ1 < 0 && sqrt_ξ1_νInv > options.neg_tol) && 
       error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
 
 
@@ -210,6 +209,7 @@ function iR2N(
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
     subsolver_options.κξ = κξ
+    subsolver_options.callback_pointer = options.callback_pointer
     subsolver_options.verbose = 50
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
@@ -238,8 +238,8 @@ function iR2N(
     Δmod = fhmax - (fk + mks) + max(1, abs(hk)) * 10 * eps()
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
-    if (ξ ≤ 0 || isnan(ξ))
-      error("iR2N: failed to compute a step: ξ = $ξ")
+    if (ξ < 0 && -ξ > options.neg_tol^2 / νInv) || isnan(ξ)
+      error("iR2N: failed to compute a step: ξ = $ξ and $(-ξ) > $(options.neg_tol^2 / νInv)")
     end
 
     ρk = Δobj / Δmod
@@ -248,7 +248,7 @@ function iR2N(
 
     if (verbose > 0) && ((k % ptf == 0) || (k == 1))
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(ξ1) ρk σk norm(xk) norm(s) λmax dualGap iR2N_stat
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) ρk σk norm(xk) norm(s) λmax dualGap iR2N_stat
       #! format: off
     end
 
@@ -288,7 +288,7 @@ function iR2N(
       @info @sprintf "%6d %8s %8.1e %8.1e" k "" fk hk
     elseif optimal
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(ξ1) "" σk norm(xk) norm(s) λmax dualGap
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) "" σk norm(xk) norm(s) λmax dualGap
       #! format: on
       @info "iR2N: terminating with √(ξ1/ν) = $(sqrt_ξ1_νInv)"
     end
@@ -315,5 +315,8 @@ function iR2N(
   set_solver_specific!(stats, :Hhist, Hobj_hist[1:k])
   set_solver_specific!(stats, :NonSmooth, h)
   set_solver_specific!(stats, :SubsolverCounter, Complex_hist[1:k])
+
+  GC.gc()
+  
   return stats
 end

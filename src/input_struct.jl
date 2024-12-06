@@ -20,6 +20,7 @@ mutable struct ROSolverOptions{R}
   reduce_TR::Bool
   dualGap::Union{R, Nothing} # duality gap tolerance for inexact prox computation
   κξ::R # tolerance for the inexact prox computation : \hat{ξ} ≥ κξ * ξ
+  callback_pointer::Union{Ptr{Cvoid}, Nothing} # pointer to callback function
 
   function ROSolverOptions{R}(;
     ϵa::R = √eps(R),
@@ -39,8 +40,10 @@ mutable struct ROSolverOptions{R}
     θ::R = eps(R)^(1 / 5),
     β::R = 1 / eps(R),
     reduce_TR::Bool = true,
-    dualGap::Union{R, Nothing} = nothing,
-    κξ::R = R(3/4)
+    dualGap::Union{R, Nothing} = 1e-5,
+    κξ::R = R(3/4),
+    callback_pointer::Union{Ptr{Cvoid}, Nothing} = nothing
+
   ) where {R <: Real}
     @assert ϵa ≥ 0
     @assert ϵr ≥ 0
@@ -78,7 +81,8 @@ mutable struct ROSolverOptions{R}
       β,
       reduce_TR,
       dualGap,
-      κξ
+      κξ,
+      callback_pointer
     )
   end
 end

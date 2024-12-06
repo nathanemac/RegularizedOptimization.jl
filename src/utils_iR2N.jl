@@ -7,7 +7,7 @@ abstract type InexactShiftedProximableFunction end
 
 Represents the Lp norm with parameter `p` and scaling factor `λ`.
 """
-struct NormLp{T1,T2} 
+struct NormLp{T1,T2}
     λ::T1
     p::T2
 
@@ -27,7 +27,7 @@ struct NormLp{T1,T2}
 end
 
 """
-    prox!(y, h::NormLp, q, ν; dualGap=1e-5)
+    prox!(y, h::NormLp, q, ν, ctx_ptr, callback)
 
 Evaluates inexactly the proximity operator of a Lp norm object.
 The duality gap at the solution is guaranteed to be less than `dualGap`.
@@ -37,8 +37,8 @@ Inputs:
     - `h`: NormLp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
-"""
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function."""
 function prox!(
         y::AbstractArray,
         h::NormLp,
@@ -46,11 +46,10 @@ function prox!(
         ν::Real,
         ctx_ptr::Ptr{Cvoid},
         callback::Ptr{Cvoid};
-        dualGap::Real = 1e-5,
 )
-    
+
     n = length(y)
-    ws = ProxTV.newWorkspace(n)
+    ws = newWorkspace(n)
 
     # Allocate info array (based on C++ code)
     info = zeros(Float64, 3)
@@ -60,14 +59,14 @@ function prox!(
 
     positive = Int32(all(v -> v >= 0, y) ? 1 : 0)
 
-    ProxTV.PN_LPp(q, lambda_scaled, y, info, n, h.p, ws, positive, dualGap, ctx_ptr, callback)
+    PN_LPp(q, lambda_scaled, y, info, n, h.p, ws, positive, ctx_ptr, callback)
 
     return y
 end
 
 # Allows NormLp objects to be called as functions
 function (h::NormLp)(x::AbstractArray)
-    return h.λ * ProxTV.LPnorm(x, length(x), h.p)
+    return h.λ * LPnorm(x, length(x), h.p)
 end
 
 """
@@ -151,7 +150,7 @@ function (ψ::ShiftedNormLp)(y::AbstractVector)
 end
 
 """
-    prox!(y, ψ::ShiftedNormLp, q, ν; dualGap=1e-5)
+    prox!(y, ψ::ShiftedNormLp, q, ν, ctx_ptr, callback)
 
 Evaluates inexactly the proximity operator of a shifted Lp norm.
 The duality gap at the solution is guaranteed to be less than `dualGap`.
@@ -161,19 +160,19 @@ Inputs:
     - `ψ`: ShiftedNormLp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function.
 """
 function prox!(
     y::AbstractArray,
     ψ::ShiftedNormLp,
     q::AbstractArray,
     ν::Real,
-    ctx_ptr::Ptr{Cvoid},
+    context,
     callback::Ptr{Cvoid};
-    dualGap::Real = 1e-5,
 )
     n = length(y)
-    ws = ProxTV.newWorkspace(n)
+    ws = C_NULL # to avoid unexplained memory leaks
 
     # Allocate info array (based on C++ code)
     info = zeros(Float64, 3)
@@ -190,13 +189,13 @@ function prox!(
     positive = Int32(all(v -> v >= 0, y_shifted) ? 1 : 0)
 
     if ψ.h.p == 1
-        ProxTV.PN_LP1(y_shifted, lambda_scaled, x, info, n)
+        PN_LP1(y_shifted, lambda_scaled, x, info, n)
     elseif ψ.h.p == 2
-        ProxTV.PN_LP2(y_shifted, lambda_scaled, x, info, n)
+        PN_LP2(y_shifted, lambda_scaled, x, info, n)
     elseif ψ.h.p == Inf
-        ProxTV.PN_LPi(y_shifted, lambda_scaled, x, info, n, ws)
+        PN_LPi(y_shifted, lambda_scaled, x, info, n, ws)
     else
-        ProxTV.PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, dualGap, ctx_ptr, callback)
+        PN_LPp(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, positive, context, callback)
     end
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -260,20 +259,18 @@ Inputs:
     - `h`: NormTVp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
-"""
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function."""
 function prox!(
         y::AbstractArray,
         h::NormTVp,
         q::AbstractArray,
         ν::Real,
         ctx_ptr::Ptr{Cvoid},
-        callback::Ptr{Cvoid};
-        dualGap::Real = 1e-5,
-)
-    
+        callback::Ptr{Cvoid})
+
     n = length(y)
-    ws = ProxTV.newWorkspace(n)
+    ws = C_NULL
 
     # Allocate info array (based on C++ code)
     info = zeros(Float64, 3)
@@ -281,7 +278,7 @@ function prox!(
     # Adjust lambda to account for ν (multiply λ by ν)
     lambda_scaled = h.λ * ν
 
-    ProxTV.TV(q, lambda_scaled, y, info, n, h.p, ws, ctx_ptr, callback, objGap = dualGap)
+    TV(q, lambda_scaled, y, info, n, h.p, ws, ctx_ptr, callback)
 
     return y
 end
@@ -372,7 +369,7 @@ function (ψ::ShiftedNormTVp)(y::AbstractVector)
 end
 
 """
-    prox!(y, ψ::ShiftedNormTVp, q, σ; dualGap=1e-5)
+    prox!(y, ψ::ShiftedNormTVp, q, σ, ctx_ptr, callback)
 
 Evaluates inexactly the proximity operator of a shifted TVp norm.
 The duality gap at the solution is guaranteed to be less than `dualGap`.
@@ -382,14 +379,12 @@ Inputs:
     - `ψ`: ShiftedNormTVp object.
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `dualGap`: Desired quality of the solution in terms of duality gap (default `1e-5`).
-
-Although `dualGap` can be specified, the TVp proximity operator uses a fixed objective gap of `1e-5` as defined in the C++ code. A warning will be emitted the first time this function is called.
-
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function.
 """
-function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real, ctx_ptr::Ptr{Cvoid}, callback::Ptr{Cvoid}; dualGap=1e-5)
+function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real, context, callback::Ptr{Cvoid})
     n = length(y)
-    ws = ProxTV.newWorkspace(n)
+    ws = C_NULL
 
     # Allocate info array (based on C++ code)
     info = zeros(Float64, 3)
@@ -404,7 +399,7 @@ function prox!(y::AbstractArray, ψ::ShiftedNormTVp, q::AbstractArray, ν::Real,
     x = similar(y)
 
     # Call the TV function from ProxTV package
-    ProxTV.TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, ctx_ptr, callback, objGap = dualGap)
+    TV(y_shifted, lambda_scaled, x, info, n, ψ.h.p, ws, context, callback)
 
     # Compute s = x - xk - sj
     s = x .- ψ.xk .- ψ.sj
@@ -437,50 +432,40 @@ function shifted(h::Union{NormLp, NormTVp}, xk::AbstractVector)
 end
 
 """
-    prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν; dualGap=nothing)
+    prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν; ctx_ptr, callback)
 
-Evaluates the proximity operator of a shifted regularizer, choosing between exact and inexact calculations based on the type of `ψ` and the presence of `dualGap`.
+Evaluates the proximity operator of a shifted regularizer, choosing between exact and inexact calculations based on the type of `ψ` and the presence of pointers.
 
-- If `ψ` is a `ShiftedProximableFunction` and `dualGap` is not provided, computes the **exact** proximity operator.
-- If `ψ` is an `InexactShiftedProximableFunction` and `dualGap` is provided, computes the **inexact** proximity operator with a guaranteed duality gap below `dualGap`.
+- If `ψ` is a `ShiftedProximableFunction` and pointers are not provided, computes the **exact** proximity operator.
+- If `ψ` is an `InexactShiftedProximableFunction` and pointers are provided, computes the **inexact** proximity operator by calling the callback.
 
 Inputs:
     - `y`: Array in which to store the result.
     - `ψ`: Either a `ShiftedProximableFunction` (for exact prox) or an `InexactShiftedProximableFunction` (for inexact prox).
     - `q`: Vector to which the proximity operator is applied.
     - `ν`: Scaling factor.
-    - `dualGap`: Desired quality of the solution in terms of duality gap for inexact prox (default is `nothing`, indicating exact prox).
-
+    - `ctx_ptr`: Pointer to the context object.
+    - `callback`: Pointer to the callback function.
 Outputs:
     - The solution is stored in the input vector `y`, which is also returned.
 
 Errors:
-    - Raises an error if `ψ` is of type `ShiftedProximableFunction` and `dualGap` is provided, or if `ψ` is of type `InexactShiftedProximableFunction` and `dualGap` is not provided.
+    - Raises an error if `ψ` is of type `ShiftedProximableFunction` and pointers are provided, or if `ψ` is of type `InexactShiftedProximableFunction` and pointers are not provided.
 """
-function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν, ctx_ptr, callback; dualGap=nothing)
-    if dualGap === nothing && ψ isa ShiftedProximableFunction
+function prox!(y, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction
+  }, q, ν; ctx_ptr, callback)
+    if ψ isa ShiftedProximableFunction
+
         # Call to exact prox!() if dualGap is not defined
         return prox!(y, ψ, q, ν)
-    elseif dualGap !== nothing && ψ isa InexactShiftedProximableFunction
+    elseif ψ isa InexactShiftedProximableFunction
         # Call to inexact prox!() if dualGap is defined
-        return prox!(y, ψ, q, ν, ctx_ptr, callback; dualGap=dualGap)
+        return prox!(y, ψ, q, ν, ctx_ptr, callback)
     else
-        error("Combination of ψ::$(typeof(ψ)) and dualGap::$(typeof(dualGap)) is not a valid call to prox!.
-        Please provide dualGap::Real for InexactShiftedProximableFunction or omit it for ShiftedProximableFunction.")
+        error("Combination of ψ::$(typeof(ψ)) presence/lack of pointers is not a valid call to prox!.
+        Please provide pointers for InexactShiftedProximableFunction or omit them for ShiftedProximableFunction.")
     end
 end
-
-# Outdated function
-function check_condition_xi!(s, ψ::Union{InexactShiftedProximableFunction, ShiftedProximableFunction}, q, ν, κξ, ξ, mk, hk, k, dualGap)
-    while dualGap > (1-κξ) / κξ * ξ
-        # @info " -> iR2N: dualGap condition not satisfied, recomputing prox at iteration $k."
-        dualGap = (1-κξ) / κξ * ξ
-        prox!(s, ψ, q, ν; dualGap=dualGap)
-        ξ = hk - mk(s) + max(1, abs(hk)) * 10 * eps()
-    end
-    return s, dualGap, ξ
-end
-
 
 ############################################################################################################
 ########################## CALLBACK FUNCTION ##########################
@@ -488,24 +473,44 @@ end
 mutable struct AlgorithmContextCallback
     hk::Float64
     mk::Function
+    κξ::Float64
+    shift::AbstractVector{Float64}
+    s_k_unshifted::Vector{Float64}
+    dualGap::Float64
+end
+function AlgorithmContextCallback(;hk=0.0, mk = x -> x, κξ = 0.0, shift = zeros(0), s_k_unshifted = zeros(0), dualGap = 0.0)
+    AlgorithmContextCallback(hk, mk, κξ, shift, s_k_unshifted, dualGap)
 end
 
 function julia_callback(s_ptr::Ptr{Cdouble}, s_length::Csize_t, delta_k::Cdouble, ctx_ptr::Ptr{Cvoid})::Cint
-    # Convertir s_ptr en vecteur Julia
-    s_k = unsafe_wrap(Vector{Float64}, s_ptr, s_length)
-    
-    # Get context from pointer
-    context = unsafe_pointer_to_objref(ctx_ptr)::AlgorithmContext
-    
-    # compute ξk
-    ξk = context.hk - context.mk(s_k) + max(1, abs(context.hk)) * 10 * eps()
-    
-    # Compute condition according to convergence analysis
+    s_k = unsafe_wrap(Vector{Float64}, s_ptr, s_length; own = false)
+    context = unsafe_pointer_to_objref(ctx_ptr)::AlgorithmContextCallback
+
+    # In-place operation to avoid memory allocations
+    @. context.s_k_unshifted = s_k - context.shift
+
+    # Computations without allocations
+    ξk = context.hk - context.mk(context.s_k_unshifted) + max(1, abs(context.hk)) * 10 * eps()
     condition = delta_k ≤ (1 - context.κξ) / context.κξ * ξk
-    
-    # Retourner le résultat
-    return condition ? 1 : 0
+
+    return condition ? Int32(1) : Int32(0)
 end
 
 callback_pointer = @cfunction(julia_callback, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
 
+
+
+
+
+###### OUTDATED CODE ######
+# Outdated function
+# function check_condition_xi!(s, ψ::Union{InexactShiftedProximableFunction, ShiftedProximalOperators.ShiftedProximableFunction
+#   }, q, ν, κξ, ξ, mk, hk, k, dualGap)
+#     while dualGap > (1-κξ) / κξ * ξ
+#         # @info " -> iR2N: dualGap condition not satisfied, recomputing prox at iteration $k."
+#         dualGap = (1-κξ) / κξ * ξ
+#         prox!(s, ψ, q, ν; dualGap=dualGap)
+#         ξ = hk - mk(s) + max(1, abs(hk)) * 10 * eps()
+#     end
+#     return s, dualGap, ξ
+# end

@@ -1,3 +1,5 @@
+export default_prox_callback
+
 # use Arpack to obtain largest eigenvalue in magnitude with a minimum of robustness
 function LinearAlgebra.opnorm(B; kwargs...)
   m, n = size(B)
@@ -74,6 +76,24 @@ function opnorm_svd(J; max_attempts::Int = 3)
   end
 
   return σ, have_svd
+end
+
+function default_prox_callback(
+    s_ptr::Ptr{Cdouble},
+    s_length::Csize_t,
+    delta_k::Cdouble,
+    ctx_ptr::Ptr{Cvoid}
+)::Cint
+    s_k = unsafe_wrap(Vector{Float64}, s_ptr, s_length; own = false)
+    context = unsafe_pointer_to_objref(ctx_ptr)::AlgorithmContextCallback
+
+    # In-place operation to avoid memory allocations
+    @. context.s_k_unshifted = s_k - context.shift
+
+    # Computations without allocations
+    ξk = context.hk - context.mk(context.s_k_unshifted) + max(1, abs(context.hk)) * 10 * eps()
+    condition = delta_k ≤ (1 - context.κξ) / context.κξ * ξk
+    return condition ? Int32(1) : Int32(0)
 end
 
 ShiftedProximalOperators.iprox!(
