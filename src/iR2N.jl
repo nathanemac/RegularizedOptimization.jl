@@ -1,5 +1,4 @@
 export iR2N
-import ProxTV: shifted, shift!, prox!
 """
 iR2N(nlp, h, χ, options; kwargs...)
 
@@ -53,6 +52,8 @@ function iR2N(
   subsolver_options = ROSolverOptions(ϵa = options.ϵa),
   Mmonotone::Int = 0, 
   selected::AbstractVector{<:Integer} = 1:(f.meta.nvar),
+  prox_callback_flag::Int = 0,
+  κξ_flag::Int = 0,
 ) where {H, R}
   start_time = time()
   elapsed_time = 0.0
@@ -77,7 +78,32 @@ function iR2N(
   κξ = options.κξ
 
   # initialize callback and pointer to callback function
-  options.callback_pointer = @cfunction(default_prox_callback, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
+  if prox_callback_flag == 0
+    options.callback_pointer = @cfunction(default_prox_callback, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
+  elseif prox_callback_flag == 1
+    options.callback_pointer = @cfunction(default_prox_callback_v2, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
+  else
+    options.callback_pointer = @cfunction(default_prox_callback_v3, Cint, (Ptr{Cdouble}, Csize_t, Cdouble, Ptr{Cvoid}))
+  end
+
+  function update_κξ(a, b, k)
+    return a + (b - a) * k / options.maxIter
+  end
+
+  # initialize strategy for κξ
+  if κξ_flag == 0
+    # default strategy : κξ remains constant
+    a = κξ
+    b = κξ
+  elseif κξ_flag == 1
+    # κξ is increased at each iteration (i.e we become more and more demanding on the quality of the solution)
+    a = κξ
+    b = 1.
+  else
+    # κξ is decreased at each iteration (i.e we become less and less demanding on the quality of the solution)
+    a = κξ
+    b = 1/2
+  end
 
   # store initial values of the subsolver_options fields that will be modified
   ν_subsolver = subsolver_options.ν
@@ -123,7 +149,7 @@ function iR2N(
   Complex_hist = zeros(Int, maxIter)
   if verbose > 0
     #! format: off
-    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "dualGap" "iR2N"
+    @info @sprintf "%6s %8s %8s %8s %7s %7s %8s %7s %7s %7s %7s %7s %7s %1s" "outer" "inner" "f(x)" "h(x)" "√(ξ1/ν)" "√ξ" "ρ" "σ" "‖x‖" "‖s‖" "‖Bₖ‖" "dualGap" "κξ" "iR2N"
     #! format: on
   end
 
@@ -143,6 +169,9 @@ function iR2N(
   found_λ || error("operator norm computation failed")
   νInv = (1 + θ) *( σk + λmax)
   sqrt_ξ1_νInv = one(R)
+
+  # initialize context for prox_callback
+  context = AlgorithmContextCallback(hk = hk, κξ = κξ, shift = similar(xk), s_k_unshifted = similar(xk), dualGap = dualGap)
 
   optimal = false
   tired = k ≥ maxIter || elapsed_time > maxTime
@@ -176,21 +205,21 @@ function iR2N(
     subsolver_options.ν = 1 / νInv
     
     # prepare callback and pointer to callback function
-    context = AlgorithmContextCallback(hk, mk1, κξ, ψ.xk + ψ.sj, zeros(length(xk)), dualGap)
-    
+    context.hk = hk
+    context.mk = mk1
+    context.κξ = update_κξ(a, b, k)
+    context.shift = ψ.xk + ψ.sj
+    context.dualGap = dualGap # reset dualGap to its initial value at each iteration
+
     # call prox computation
     prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, context, options.callback_pointer)
 
     ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
 
-    # check condition : dualGap ≤ (1-κξ) / κξ * ξ1
-    # s, dualGap, ξ1 = check_condition_xi!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, κξ, ξ1, mk1, hk, k, dualGap)
     sqrt_ξ1_νInv = ξ1 ≥ 0 ? sqrt(ξ1 * νInv) : sqrt(-ξ1 * νInv)
 
-    # sqrt_ξ1_νInv = sqrt(ξ1 * νInv)
     (ξ1 < 0 && sqrt_ξ1_νInv > options.neg_tol) && 
       error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
-
 
     if ξ1 ≥ 0 && k == 1
       ϵ_increment = ϵr * sqrt_ξ1_νInv
@@ -208,14 +237,15 @@ function iR2N(
     subsolver_options.ϵa = k == 1 ? 1.0e-3 : min(sqrt_ξ1_νInv ^ (1.5) , sqrt_ξ1_νInv * 1e-3) # 1.0e-5 default
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
-    subsolver_options.κξ = κξ
+    subsolver_options.κξ = context.κξ
     subsolver_options.callback_pointer = options.callback_pointer
-    subsolver_options.verbose = 50
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
-    s, iter, _ = with_logger(subsolver_logger) do
+    s, iter, outdict = with_logger(subsolver_logger) do
       subsolver(φ, ∇φ!, ψ, subsolver_args..., subsolver_options, s)
     end
+    push!(context.prox_stats[2], iter)
+    push!(context.prox_stats[3], outdict[:ItersProx])
 
     if norm(s) > β * norm(s1)
       s .= s1
@@ -248,7 +278,7 @@ function iR2N(
 
     if (verbose > 0) && ((k % ptf == 0) || (k == 1))
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) ρk σk norm(xk) norm(s) λmax dualGap iR2N_stat
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8.1e %7.1e %7.1e %7.1e %7.1e %7.1e %7.1e %1s" k iter fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) ρk σk norm(xk) norm(s) λmax context.dualGap context.κξ iR2N_stat
       #! format: off
     end
 
@@ -288,7 +318,7 @@ function iR2N(
       @info @sprintf "%6d %8s %8.1e %8.1e" k "" fk hk
     elseif optimal
       #! format: off
-      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) "" σk norm(xk) norm(s) λmax dualGap
+      @info @sprintf "%6d %8d %8.1e %8.1e %7.1e %7.1e %8s %7.1e %7.1e %7.1e %7.1e %7.1e %7.1e" k 1 fk hk sqrt_ξ1_νInv sqrt(abs(ξ1)) "" σk norm(xk) norm(s) λmax context.dualGap context.κξ
       #! format: on
       @info "iR2N: terminating with √(ξ1/ν) = $(sqrt_ξ1_νInv)"
     end
@@ -304,6 +334,8 @@ function iR2N(
     :exception
   end
 
+  context.prox_stats[1] = k
+
   stats = GenericExecutionStats(f)
   set_status!(stats, status)
   set_solution!(stats, xk)
@@ -315,8 +347,7 @@ function iR2N(
   set_solver_specific!(stats, :Hhist, Hobj_hist[1:k])
   set_solver_specific!(stats, :NonSmooth, h)
   set_solver_specific!(stats, :SubsolverCounter, Complex_hist[1:k])
-
-  GC.gc()
+  set_solver_specific!(stats, :ItersProx, context.prox_stats)
   
   return stats
 end

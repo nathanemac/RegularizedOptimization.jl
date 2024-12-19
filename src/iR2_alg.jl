@@ -1,7 +1,6 @@
 export iR2, iR2Solver, solve!
 
 import SolverCore.solve!
-import ProxTV: shifted, shift!, prox!
 
 mutable struct iR2Solver{
   R <: Real,
@@ -90,9 +89,9 @@ function iR2Solver(reg_nlp::AbstractRegularizedNLPModel{T, V}; max_iter::Int = 1
   Hobj_hist = zeros(T, max_iter + 2)
   Complex_hist = zeros(Int, max_iter + 2)
 
-  ψ =
-    has_bnds ? shifted(reg_nlp.h, xk, l_bound_m_x, u_bound_m_x, reg_nlp.selected) :
-    shifted(reg_nlp.h, xk)
+  ψ = shifted(reg_nlp.h, xk)
+    # has_bnds ? shifted(reg_nlp.h, xk, l_bound_m_x, u_bound_m_x, reg_nlp.selected) :
+    # shifted(reg_nlp.h, xk)
   return iR2Solver(
     xk,
     ∇fk,
@@ -204,7 +203,7 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
-  )
+    )
 end
 
 function iR2(
@@ -235,11 +234,12 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
-  )
+    )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
     :Hhist => stats.solver_specific[:Hhist],
     :Chist => stats.solver_specific[:SubsolverCounter],
+    :ItersProx => stats.solver_specific[:ItersProx],
     :NonSmooth => h,
     :status => stats.status,
     :fk => stats.solver_specific[:smooth_obj],
@@ -280,11 +280,12 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
-  )
+    )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
     :Hhist => stats.solver_specific[:Hhist],
     :Chist => stats.solver_specific[:SubsolverCounter],
+    :ItersProx => stats.solver_specific[:ItersProx],
     :NonSmooth => h,
     :status => stats.status,
     :fk => stats.solver_specific[:smooth_obj],
@@ -334,6 +335,7 @@ function SolverCore.solve!(
   dualGap::Union{T, Nothing} = nothing,
   κξ::T = T(3 / 4),
   prox_callback_pointer::Union{Ptr{Cvoid}, Nothing} = nothing,
+  
 ) where {T, V}
   reset!(stats)
 
@@ -393,7 +395,7 @@ function SolverCore.solve!(
   end
 
   local ξ::T
-  local ρk::T
+  local ρk::T = NaN
   σk = max(1 / ν, σmin)
   ν = 1 / σk
   sqrt_ξ_νInv = one(T)
@@ -412,17 +414,13 @@ function SolverCore.solve!(
   φk(d) = dot(∇fk, d)
   mk(d)::T = φk(d) + ψ(d)::T
 
-  # prepare callback context and pointer to callback function
-  context = AlgorithmContextCallback(hk, mk, κξ, ψ.xk + ψ.sj, zeros(length(xk)), dualGap)
+  # prepare context for prox callback
+  context = AlgorithmContextCallback(hk = hk, mk = mk, κξ = κξ, shift = ψ.xk + ψ.sj, s_k_unshifted = zeros(length(xk)), dualGap = dualGap)
 
   prox!(s, ψ, mν∇fk, ν, context, prox_callback_pointer)
   mks = mk(s)
 
   ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
-  # println("ξ = $ξ")
-
-  # check condition : dualGap ≤ (1-κξ) / κξ * ξ
-  # s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
 
   sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
   atol += rtol * sqrt_ξ_νInv # make stopping test absolute and relative
@@ -473,7 +471,7 @@ function SolverCore.solve!(
           σk,
           norm(xk),
           norm(s),
-          dualGap,
+          context.dualGap,
           (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
         ],
         colsep = 1,
@@ -509,16 +507,16 @@ function SolverCore.solve!(
     set_time!(stats, time() - start_time)
 
     # prepare callback context and pointer to callback function
-    context = AlgorithmContextCallback(hk, mk, κξ, ψ.xk + ψ.sj, zeros(length(xk)), dualGap)
+    context.hk = hk
+    context.mk = mk
+    context.κξ = κξ
+    context.shift = ψ.xk + ψ.sj
+    context.dualGap = dualGap # reset dualGap to its initial value
 
     prox!(s, ψ, mν∇fk, ν, context, prox_callback_pointer)
     mks = mk(s)
 
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
-    # println("ξ = $ξ")
-
-    # check condition : dualGap ≤ (1-κξ) / κξ * ξ
-    # s, dualGap, ξ = check_condition_xi!(s, ψ, -ν * ∇fk, ν, κξ, ξ, mk, hk, stats.iter, dualGap)
 
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
     solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
@@ -544,7 +542,6 @@ function SolverCore.solve!(
 
     done = stats.status != :unknown
   end
-
   if verbose > 0 && stats.status == :first_order
     @info log_row(
       Any[
@@ -556,7 +553,7 @@ function SolverCore.solve!(
         σk,
         norm(xk),
         norm(s),
-        dualGap,
+        context.dualGap,
         (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
       ],
       colsep = 1,
@@ -564,6 +561,7 @@ function SolverCore.solve!(
     @info "iR2: terminating with √(ξ/ν) = $(sqrt_ξ_νInv)"
   end
 
-  set_solution!(stats, xk)
+  set_solution!(stats, xk)  
+  set_solver_specific!(stats, :ItersProx, context.prox_stats[3])
   return stats
 end

@@ -1,5 +1,4 @@
 export R2N
-
 """
 R2N(nlp, h, χ, options; kwargs...)
 
