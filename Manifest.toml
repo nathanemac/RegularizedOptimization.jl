@@ -2,7 +2,7 @@
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "8a7fe9a385063594283293f85631ad5cdee5d043"
+project_hash = "349dc91615be45014452eef0e0ad520084fa69e8"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -599,9 +599,9 @@ version = "1.11.0"
 
 [[deps.ProxTV]]
 deps = ["JuliaFormatter", "LAPACK_jll", "LinearAlgebra", "OpenBLAS32_jll", "ShiftedProximalOperators", "proxTV_jll"]
-path = "../ProxTV.jl"
+git-tree-sha1 = "3f5a65c99f31c1ebe7587278203dd906cb2b4529"
 uuid = "925ea013-038b-5ab6-a1ab-e0849925e528"
-version = "1.0.0"
+version = "1.1.0"
 
 [[deps.ProximalCore]]
 deps = ["LinearAlgebra"]

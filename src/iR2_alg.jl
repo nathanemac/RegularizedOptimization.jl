@@ -366,7 +366,7 @@ function SolverCore.solve!(
   improper = false
   hk = @views h(xk[selected])
   if hk == Inf # TODO 
-    verbose > 0 && @info "R2: finding initial guess where nonsmooth term is finite"
+    verbose > 0 && @info "iR2: finding initial guess where nonsmooth term is finite"
     prox!(xk, h, xk, one(eltype(x0)))
     hk = @views h(xk[selected])
     hk < Inf || error("prox computation must be erroneous")
@@ -415,7 +415,7 @@ function SolverCore.solve!(
   mk(d)::T = φk(d) + ψ(d)::T
 
   # prepare context for prox callback
-  context = AlgorithmContextCallback(hk = hk, mk = mk, κξ = κξ, shift = ψ.xk + ψ.sj, s_k_unshifted = zeros(length(xk)), dualGap = dualGap)
+  context = AlgorithmContextCallback(hk = hk, mk = mk, κξ = κξ, shift = ψ.xk + ψ.sj, s_k_unshifted = zeros(length(xk)), dualGap = dualGap, iters_prox_projLp = 10)
 
   prox!(s, ψ, mν∇fk, ν, context, prox_callback_pointer)
   mks = mk(s)
@@ -427,7 +427,7 @@ function SolverCore.solve!(
 
   solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
   (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
-    error("iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv)")
+    error("iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)")
 
   set_solver_specific!(stats, :xi, sqrt_ξ_νInv)
   set_status!(
@@ -520,8 +520,9 @@ function SolverCore.solve!(
 
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
     solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
+
     (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
-      error("iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv)")
+      error("iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)")
 
     set_solver_specific!(stats, :xi, sqrt_ξ_νInv)
     set_status!(

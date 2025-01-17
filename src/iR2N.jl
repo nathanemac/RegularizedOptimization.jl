@@ -131,7 +131,7 @@ function iR2N(
   hk = h(xk[selected])
   if hk == Inf # TODO 
     verbose > 0 && @info "iR2N: finding initial guess where nonsmooth term is finite"
-    prox!(xk, h, x0, one(eltype(x0)))
+    prox!(xk, h, x0, one(eltype(x0)), AlgorithmContextCallback(dualGap = dualGap, flag_projLp = 1, iters_prox_projLp = 10), options.callback_pointer)
     hk = h(xk[selected])
     hk < Inf || error("prox computation must be erroneous")
     verbose > 0 && @debug "iR2N: found point where h has value" hk
@@ -171,7 +171,7 @@ function iR2N(
   sqrt_ξ1_νInv = one(R)
 
   # initialize context for prox_callback
-  context = AlgorithmContextCallback(hk = hk, κξ = κξ, shift = similar(xk), s_k_unshifted = similar(xk), dualGap = dualGap)
+  context = AlgorithmContextCallback(hk = hk, κξ = κξ, shift = similar(xk), s_k_unshifted = similar(xk), dualGap = dualGap, iters_prox_projLp = 10)
 
   optimal = false
   tired = k ≥ maxIter || elapsed_time > maxTime
@@ -219,7 +219,7 @@ function iR2N(
     sqrt_ξ1_νInv = ξ1 ≥ 0 ? sqrt(ξ1 * νInv) : sqrt(-ξ1 * νInv)
 
     (ξ1 < 0 && sqrt_ξ1_νInv > options.neg_tol) && 
-      error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1)")
+      error("iR2N: first prox-gradient step should produce a decrease but ξ1 = $(ξ1) and √(ξ1/ν) = $(sqrt_ξ1_νInv) > $(options.neg_tol)")
 
     if ξ1 ≥ 0 && k == 1
       ϵ_increment = ϵr * sqrt_ξ1_νInv
@@ -238,6 +238,7 @@ function iR2N(
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
     subsolver_options.κξ = context.κξ
+    # subsolver_options.verbose = 100
     subsolver_options.callback_pointer = options.callback_pointer
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
