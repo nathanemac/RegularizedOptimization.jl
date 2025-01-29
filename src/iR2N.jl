@@ -131,7 +131,7 @@ function iR2N(
   hk = h(xk[selected])
   if hk == Inf # TODO 
     verbose > 0 && @info "iR2N: finding initial guess where nonsmooth term is finite"
-    prox!(xk, h, x0, one(eltype(x0)), AlgorithmContextCallback(dualGap = dualGap, flag_projLp = 1, iters_prox_projLp = 10), options.callback_pointer)
+    prox!(xk, h, x0, one(eltype(x0)), AlgorithmContextCallback(dualGap = dualGap, flag_projLp = 1, iters_prox_projLp = 100), options.callback_pointer)
     hk = h(xk[selected])
     hk < Inf || error("prox computation must be erroneous")
     verbose > 0 && @debug "iR2N: found point where h has value" hk
@@ -171,7 +171,7 @@ function iR2N(
   sqrt_ξ1_νInv = one(R)
 
   # initialize context for prox_callback
-  context = AlgorithmContextCallback(hk = hk, κξ = κξ, shift = similar(xk), s_k_unshifted = similar(xk), dualGap = dualGap, iters_prox_projLp = 10)
+  context = AlgorithmContextCallback(hk = hk, κξ = κξ, shift = similar(xk), s_k_unshifted = similar(xk), dualGap = dualGap, iters_prox_projLp = 100)
 
   optimal = false
   tired = k ≥ maxIter || elapsed_time > maxTime
@@ -211,10 +211,11 @@ function iR2N(
     context.shift = ψ.xk + ψ.sj
     context.dualGap = dualGap # reset dualGap to its initial value at each iteration
 
-    # call prox computation
+    # call prox computation to get s_{k,cp}
     prox!(s, ψ, -subsolver_options.ν * ∇fk, subsolver_options.ν, context, options.callback_pointer)
 
-    ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps()
+    # compute ξ1 : associated with s_{k,cp}
+    ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps() 
 
     sqrt_ξ1_νInv = ξ1 ≥ 0 ? sqrt(ξ1 * νInv) : sqrt(-ξ1 * νInv)
 
@@ -238,8 +239,9 @@ function iR2N(
     subsolver_options.neg_tol = options.neg_tol
     subsolver_options.dualGap = dualGap
     subsolver_options.κξ = context.κξ
-    # subsolver_options.verbose = 100
+    subsolver_options.verbose = 100
     subsolver_options.callback_pointer = options.callback_pointer
+    subsolver_options.mk1 = mk # tests on value of the model
     @debug "setting inner stopping tolerance to" subsolver_options.optTol
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
     s, iter, outdict = with_logger(subsolver_logger) do
@@ -250,6 +252,7 @@ function iR2N(
 
     if norm(s) > β * norm(s1)
       s .= s1
+      println("iR2N: using s1")
     end
     # restore initial subsolver_options.ϵa here so that subsolver_options.ϵa
     # is not modified if there is an error
@@ -268,9 +271,20 @@ function iR2N(
     Δobj = fhmax - (fkn + hkn) + max(1, abs(fhmax)) * 10 * eps()
     Δmod = fhmax - (fk + mks) + max(1, abs(hk)) * 10 * eps()
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
+    sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ * νInv) : sqrt(-ξ * νInv)
 
-    if (ξ < 0 && -ξ > options.neg_tol^2 / νInv) || isnan(ξ)
-      error("iR2N: failed to compute a step: ξ = $ξ and $(-ξ) > $(options.neg_tol^2 / νInv)")
+    # check assumptions on ξ and ξ1 (cf Zulip for discussion)
+    aux_assert = (1 - 1/(1+θ)) * ξ1
+    if (ξ < aux_assert && sqrt_ξ_νInv > options.neg_tol) || ((ξ < 0 && sqrt_ξ_νInv > options.neg_tol) || isnan(ξ))
+      if (ξ < 0 && sqrt_ξ_νInv > options.neg_tol) || isnan(ξ)
+        error("iR2N: failed to compute a step: ξ = $ξ and sqrt_ξ_νInv = $sqrt_ξ_νInv") 
+      elseif ξ < aux_assert
+        error("iR2N: ξ should be ≥ (1 - 1/(1+θ)) * ξ1 but ξ = $ξ and (1 - 1/(1+θ)) * ξ1 = $aux_assert.")
+      end
+    end
+  
+    if (ξ < 0 && sqrt_ξ_νInv > options.neg_tol) || isnan(ξ)
+      error("iR2N: failed to compute a step: ξ = $ξ and sqrt_ξ_νInv = $sqrt_ξ_νInv") 
     end
 
     ρk = Δobj / Δmod

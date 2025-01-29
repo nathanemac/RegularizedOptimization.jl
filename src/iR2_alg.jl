@@ -203,6 +203,7 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
+    mk1 = options.mk1,
     )
 end
 
@@ -234,6 +235,7 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
+    mk1 = options.mk1,
     )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -280,6 +282,7 @@ function iR2(
     dualGap = options.dualGap,
     κξ = options.κξ,
     prox_callback_pointer = options.callback_pointer,
+    mk1 = options.mk1,
     )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
@@ -335,6 +338,7 @@ function SolverCore.solve!(
   dualGap::Union{T, Nothing} = nothing,
   κξ::T = T(3 / 4),
   prox_callback_pointer::Union{Ptr{Cvoid}, Nothing} = nothing,
+  mk1::Union{Nothing, Function} = nothing,
   
 ) where {T, V}
   reset!(stats)
@@ -415,7 +419,7 @@ function SolverCore.solve!(
   mk(d)::T = φk(d) + ψ(d)::T
 
   # prepare context for prox callback
-  context = AlgorithmContextCallback(hk = hk, mk = mk, κξ = κξ, shift = ψ.xk + ψ.sj, s_k_unshifted = zeros(length(xk)), dualGap = dualGap, iters_prox_projLp = 10)
+  context = AlgorithmContextCallback(hk = hk, mk = mk, mk1=mk1, κξ = κξ, shift = ψ.xk + ψ.sj, s_k_unshifted = zeros(length(xk)), dualGap = dualGap, iters_prox_projLp = 100)
 
   prox!(s, ψ, mν∇fk, ν, context, prox_callback_pointer)
   mks = mk(s)
@@ -427,7 +431,7 @@ function SolverCore.solve!(
 
   solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
   (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
-    error("iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)")
+    error("iR2: first prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)")
 
   set_solver_specific!(stats, :xi, sqrt_ξ_νInv)
   set_status!(
@@ -516,7 +520,14 @@ function SolverCore.solve!(
     prox!(s, ψ, mν∇fk, ν, context, prox_callback_pointer)
     mks = mk(s)
 
+    # ξ1 = hk - mk1(s) + max(1, abs(hk)) * 10 * eps() # TODO remove this line after tests
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
+    # if ξ1 < ξ
+    #   println("Warning - iR2 ξ = $ξ > ξ = iR2N $ξ1")
+    # else
+    #   println("OK - iR2 ξ = $ξ <= ξ = iR2N $ξ1")
+    # end
+    
 
     sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
     solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
