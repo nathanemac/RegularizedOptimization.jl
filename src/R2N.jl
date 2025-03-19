@@ -1,4 +1,5 @@
 export R2N
+
 """
 R2N(nlp, h, χ, options; kwargs...)
 
@@ -6,14 +7,13 @@ A regularized quasi-Newton method for the problem
 
     min f(x) + h(x)
 
-where f: ℝⁿ → ℝ has a Lipschitz-continuous Jacobian, and h: ℝⁿ → ℝ is
-lower semi-continuous and proper.
+where f: ℝⁿ → ℝ is C¹ and h: ℝⁿ → ℝ is lower semi-continuous, proper and prox-bounded.
 
 About each iterate xₖ, a step sₖ is computed as an approximate solution of
 
     min  φ(s; xₖ) + ½ σₖ ‖s‖² + ψ(s; xₖ) 
 
-where φ(s ; xₖ) = f(xₖ) + ∇f(xₖ)ᵀs + ½ sᵀ Bₖ s  is a quadratic approximation of f about xₖ,
+where φ(s; xₖ) = f(xₖ) + ∇f(xₖ)ᵀs + ½ sᵀBₖs  is a quadratic approximation of f about xₖ,
 ψ(s; xₖ) = h(xₖ + s) and σₖ > 0 is the regularization parameter.
 The subproblem is solved inexactly by way of a first-order method such as the proximal-gradient
 method or the quadratic regularization method.
@@ -22,7 +22,7 @@ method or the quadratic regularization method.
 
 * `nlp::AbstractNLPModel`: a smooth optimization problem
 * `h`: a regularizer such as those defined in ProximalOperators
-* `options::ROSolverOptions`: a structure containing algorithmic parameters
+* `options::ROSolverOptions`: a structure containing algorithmic parameters.
 
 The objective, gradient and Hessian of `nlp` will be accessed.
 The Hessian is accessed as an abstract operator and need not be the exact Hessian.
@@ -31,9 +31,10 @@ The Hessian is accessed as an abstract operator and need not be the exact Hessia
 
 * `x0::AbstractVector`: an initial guess (default: `nlp.meta.x0`)
 * `subsolver_logger::AbstractLogger`: a logger to pass to the subproblem solver (default: the null logger)
-* `subsolver`: the procedure used to compute a step (`PG` or `R2`)
+* `subsolver`: the procedure used to compute a step (`R2DH`, `R2` or `PG`)
 * `subsolver_options::ROSolverOptions`: default options to pass to the subsolver (default: all defaut options)
-* `selected::AbstractVector{<:Integer}`: (default `1:f.meta.nvar`).
+* `Mmonotone::Int`: number of previous values of the objective to consider for the non-monotone variant (default: 1).
+* `selected::AbstractVector{<:Integer}`: subset of variables to which `h` is applied (default `1:nlp.meta.nvar`).
 
 ### Return values
 
@@ -46,13 +47,13 @@ function R2N(
   f::AbstractNLPModel,
   h::H,
   options::ROSolverOptions{R};
-  x0::AbstractVector = f.meta.x0,
-  subsolver_logger::Logging.AbstractLogger = Logging.NullLogger(),
-  subsolver = R2,
-  subsolver_options = ROSolverOptions(ϵa = options.ϵa),
-  Mmonotone::Int = 0, 
-  selected::AbstractVector{<:Integer} = 1:(f.meta.nvar),
-) where {H, R}
+  x0::AbstractVector=f.meta.x0,
+  subsolver_logger::Logging.AbstractLogger=Logging.NullLogger(),
+  subsolver=R2,
+  subsolver_options=ROSolverOptions(ϵa=options.ϵa),
+  Mmonotone::Int=1,
+  selected::AbstractVector{<:Integer}=1:(f.meta.nvar),
+) where {H,R}
   start_time = time()
   elapsed_time = 0.0
   # initialize passed options
@@ -94,7 +95,6 @@ function R2N(
   end
 
   # initialize parameters
-  #σk = max(1 / options.ν, σmin) #SVM
   xk = copy(x0)
   hk = h(xk[selected])
   if hk == Inf
@@ -112,7 +112,7 @@ function R2N(
 
   Fobj_hist = zeros(maxIter)
   Hobj_hist = zeros(maxIter)
-  FHobj_hist = fill!(Vector{R}(undef, Mmonotone), R(-Inf))
+  FHobj_hist = fill!(Vector{R}(undef, Mmonotone - 1), R(-Inf))
   Complex_hist = zeros(Int, maxIter)
   if verbose > 0
     #! format: off
@@ -134,7 +134,7 @@ function R2N(
 
   λmax, found_λ = opnorm(Bk)
   found_λ || error("operator norm computation failed")
-  νInv = (1 + θ) *( σk + λmax)
+  νInv = (1 + θ) * (σk + λmax)
   sqrt_ξ1_νInv = one(R)
 
   optimal = false
@@ -145,14 +145,14 @@ function R2N(
     elapsed_time = time() - start_time
     Fobj_hist[k] = fk
     Hobj_hist[k] = hk
-    Mmonotone > 0 && (FHobj_hist[mod(k-1, Mmonotone) + 1] = fk + hk)
+    Mmonotone > 1 && (FHobj_hist[mod(k - 1, Mmonotone - 1)+1] = fk + hk)
 
     # model for first prox-gradient step and ξ1
     φ1(d) = ∇fk' * d
     mk1(d) = φ1(d) + ψ(d)
 
     # model for subsequent prox-gradient steps and ξ
-    φ(d) = (d' * (Bk * d)) / 2 + ∇fk' * d + σk * dot(d, d) / 2
+    φ(d) = ∇fk' * d + dot(d, Bk * d) / 2 + σk * dot(d, d) / 2
 
     ∇φ!(g, d) = begin
       mul!(g, Bk, d)
@@ -185,9 +185,9 @@ function R2N(
     end
     s1 = copy(s)
 
-  #  subsolver_options.ϵa = k == 1 ? 1.0e-1 : max(ϵ_subsolver, min(1.0e-2, ξ1 / 10))
-    subsolver_options.ϵa = k == 1 ? 1.0e-3 : min(sqrt_ξ1_νInv ^ (1.5) , sqrt_ξ1_νInv * 1e-3) # 1.0e-5 default
-    @debug "setting inner stopping tolerance to" subsolver_options.optTol
+    subsolver_options.ϵa = k == 1 ? 1.0e-3 : min(sqrt_ξ1_νInv^(1.5), sqrt_ξ1_νInv * 1e-3)
+    verbose > 0 && @debug "setting inner stopping tolerance to" subsolver_options.optTol
+    subsolver_options.σk = σk
     subsolver_args = subsolver == R2DH ? (SpectralGradient(νInv, f.meta.nvar),) : ()
     s, iter, _ = with_logger(subsolver_logger) do
       subsolver(φ, ∇φ!, ψ, subsolver_args..., subsolver_options, s)
@@ -196,22 +196,23 @@ function R2N(
     if norm(s) > β * norm(s1)
       s .= s1
     end
+
     # restore initial subsolver_options.ϵa here so that subsolver_options.ϵa
     # is not modified if there is an error
-
     subsolver_options.ν = ν_subsolver
     subsolver_options.ϵa = ϵ_subsolver_init
+    subsolver_options.σk = σk
     Complex_hist[k] = iter
 
     xkn .= xk .+ s
     fkn = obj(f, xkn)
     hkn = h(xkn[selected])
     hkn == -Inf && error("nonsmooth term is not proper")
-    mks = mk(s) #- σk * dot(s, s) / 2
+    mks = mk(s)
 
-    fhmax = Mmonotone > 0 ? maximum(FHobj_hist) : fk + hk
+    fhmax = Mmonotone > 1 ? maximum(FHobj_hist) : fk + hk
     Δobj = fhmax - (fkn + hkn) + max(1, abs(fhmax)) * 10 * eps()
-    Δmod = fhmax - (fk + mks) + max(1, abs(hk)) * 10 * eps()
+    Δmod = fhmax - (fk + mks) + max(1, abs(fhmax)) * 10 * eps()
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
 
     if (ξ ≤ 0 || isnan(ξ))
@@ -220,7 +221,7 @@ function R2N(
 
     ρk = Δobj / Δmod
 
-    R2N_stat = (η2 ≤ ρk < Inf) ? "↗" : (ρk < η1 ? "↘" : "=")
+    R2N_stat = (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "=")
 
     if (verbose > 0) && ((k % ptf == 0) || (k == 1))
       #! format: off
