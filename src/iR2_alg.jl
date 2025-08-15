@@ -1,10 +1,10 @@
-export R2, R2Solver, solve!
+export iR2, iR2Solver, solve!
 
 import SolverCore.solve!
 
-mutable struct R2Solver{
+mutable struct iR2Solver{
   R <: Real,
-  G <: Union{ShiftedProximableFunction, Nothing},
+  G <: Union{ShiftedProximableFunction, InexactShiftedProximableFunction, Nothing},
   S <: AbstractVector{R},
 } <: AbstractOptimizationSolver
   xk::S
@@ -23,49 +23,65 @@ mutable struct R2Solver{
   Complex_hist::Vector{Int}
 end
 
-function R2Solver(
-  x0::S,
-  options::ROSolverOptions,
-  l_bound::S,
-  u_bound::S;
-  ψ = nothing,
-) where {R <: Real, S <: AbstractVector{R}}
-  maxIter = options.maxIter
-  xk = similar(x0)
-  ∇fk = similar(x0)
-  mν∇fk = similar(x0)
-  xkn = similar(x0)
-  s = zero(x0)
-  has_bnds = any(l_bound .!= R(-Inf)) || any(u_bound .!= R(Inf))
-  if has_bnds
-    l_bound_m_x = similar(xk)
-    u_bound_m_x = similar(xk)
-  else
-    l_bound_m_x = similar(xk, 0)
-    u_bound_m_x = similar(xk, 0)
-  end
-  Fobj_hist = zeros(R, maxIter + 2)
-  Hobj_hist = zeros(R, maxIter + 2)
-  Complex_hist = zeros(Int, maxIter + 2)
-  return R2Solver(
-    xk,
-    ∇fk,
-    mν∇fk,
-    ψ,
-    xkn,
-    s,
-    has_bnds,
-    l_bound,
-    u_bound,
-    l_bound_m_x,
-    u_bound_m_x,
-    Fobj_hist,
-    Hobj_hist,
-    Complex_hist,
-  )
-end
+# !!!!!! Not used anywhere !!!!!
+# function iR2Solver(
+#   x0::S,
+#   options::ROSolverOptions,
+#   l_bound::S,
+#   u_bound::S;
+#   ψ = nothing,
+# ) where {R <: Real, S <: AbstractVector{R}}
+#   maxIter = options.maxIter
+#   xk = similar(x0)
+#   ∇fk = similar(x0)
+#   mν∇fk = similar(x0)
+#   xkn = similar(x0)
+#   s = zero(x0)
+#   has_bnds = any(l_bound .!= R(-Inf)) || any(u_bound .!= R(Inf))
+#   if has_bnds
+#     l_bound_m_x = similar(xk)
+#     u_bound_m_x = similar(xk)
+#   else
+#     l_bound_m_x = similar(xk, 0)
+#     u_bound_m_x = similar(xk, 0)
+#   end
+#   Fobj_hist = zeros(R, maxIter + 2)
+#   Hobj_hist = zeros(R, maxIter + 2)
+#   Complex_hist = zeros(Int, maxIter + 2)
+#   dualGap = options.dualGap
+#   κξ = options.κξ
+#   mk1 = options.mk1
+#   shift = similar(x0)
+#   s_k_unshifted = similar(x0)
+#   callback_pointer = options.callback_pointer
+#   context = AlgorithmContextCallback(
+#     dualGap = options.dualGap,
+#     κξ = options.κξ,
+#     shift = ψ.xk + ψ.sj,
+#     s_k_unshifted = s_k_unshifted,
+#     mk = ModelFunction(similar(x0), ψ),
+#   )
+#   return iR2Solver(
+#     xk,
+#     ∇fk,
+#     mν∇fk,
+#     ψ,
+#     xkn,
+#     s,
+#     has_bnds,
+#     l_bound,
+#     u_bound,
+#     l_bound_m_x,
+#     u_bound_m_x,
+#     Fobj_hist,
+#     Hobj_hist,
+#     Complex_hist,
+#     callback_pointer,
+#     context,
+#   )
+# end
 
-function R2Solver(reg_nlp::AbstractRegularizedNLPModel{T, V}; max_iter::Int = 10000) where {T, V}
+function iR2Solver(reg_nlp::AbstractRegularizedNLPModel{T, V}; max_iter::Int = 10000) where {T, V}
   x0 = reg_nlp.model.meta.x0
   l_bound = reg_nlp.model.meta.lvar
   u_bound = reg_nlp.model.meta.uvar
@@ -89,10 +105,11 @@ function R2Solver(reg_nlp::AbstractRegularizedNLPModel{T, V}; max_iter::Int = 10
   Hobj_hist = zeros(T, max_iter + 2)
   Complex_hist = zeros(Int, max_iter + 2)
 
-  ψ =
-    has_bnds ? shifted(reg_nlp.h, xk, l_bound_m_x, u_bound_m_x, reg_nlp.selected) :
-    shifted(reg_nlp.h, xk)
-  return R2Solver(
+  ψ = shifted(reg_nlp.h, xk)
+  # has_bnds ? shifted(reg_nlp.h, xk, l_bound_m_x, u_bound_m_x, reg_nlp.selected) :
+  # shifted(reg_nlp.h, xk)
+
+  return iR2Solver(
     xk,
     ∇fk,
     mν∇fk,
@@ -111,7 +128,7 @@ function R2Solver(reg_nlp::AbstractRegularizedNLPModel{T, V}; max_iter::Int = 10
 end
 
 """
-    R2(reg_nlp; kwargs…)
+    iR2(reg_nlp; kwargs…)
 
 A first-order quadratic regularization method for the problem
 
@@ -176,7 +193,7 @@ Notably, you can access, and modify, the following:
   - `stats.status`: current status of the algorithm. Should be `:unknown` unless the algorithm has attained a stopping criterion. Changing this to anything will stop the algorithm, but you should use `:user` to properly indicate the intention.
   - `stats.elapsed_time`: elapsed time in seconds.
 """
-function R2(
+function iR2(
   nlp::AbstractNLPModel{R, V},
   h,
   options::ROSolverOptions{R};
@@ -186,7 +203,7 @@ function R2(
   selected = pop!(kwargs_dict, :selected, 1:(nlp.meta.nvar))
   x0 = pop!(kwargs_dict, :x0, nlp.meta.x0)
   reg_nlp = RegularizedNLPModel(nlp, h, selected)
-  return R2(
+  return iR2(
     reg_nlp,
     x = x0,
     atol = options.ϵa,
@@ -199,22 +216,11 @@ function R2(
     η1 = options.η1,
     η2 = options.η2,
     ν = options.ν,
-    γ = options.γ;
-    kwargs_dict...,
+    γ = options.γ,
   )
 end
 
-function R2(
-  nlp::AbstractNLPModel{R, V},
-  h;
-  selected::AbstractVector{<:Integer} = 1:(nlp.meta.nvar),
-  kwargs...,
-) where {R, V}
-  reg_nlp = RegularizedNLPModel(nlp, h, selected)
-  return R2(reg_nlp; kwargs...)
-end
-
-function R2(
+function iR2(
   f::F,
   ∇f!::G,
   h::H,
@@ -225,7 +231,7 @@ function R2(
 ) where {F <: Function, G <: Function, H, R <: Real}
   nlp = FirstOrderModel(f, ∇f!, x0)
   reg_nlp = RegularizedNLPModel(nlp, h, selected)
-  stats = R2(
+  stats = iR2(
     reg_nlp,
     x = x0,
     atol = options.ϵa,
@@ -238,24 +244,24 @@ function R2(
     η1 = options.η1,
     η2 = options.η2,
     ν = options.ν,
-    γ = options.γ;
-    kwargs...,
+    γ = options.γ,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
     :Hhist => stats.solver_specific[:Hhist],
     :Chist => stats.solver_specific[:SubsolverCounter],
+    :ItersProx => stats.solver_specific[:ItersProx],
     :NonSmooth => h,
     :status => stats.status,
     :fk => stats.solver_specific[:smooth_obj],
     :hk => stats.solver_specific[:nonsmooth_obj],
-    :ξ => stats.dual_feas,
+    :ξ => stats.solver_specific[:xi],
     :elapsed_time => stats.elapsed_time,
   )
   return stats.solution, stats.iter, outdict
 end
 
-function R2(
+function iR2(
   f::F,
   ∇f!::G,
   h::H,
@@ -268,7 +274,7 @@ function R2(
 ) where {F <: Function, G <: Function, H, R <: Real}
   nlp = FirstOrderModel(f, ∇f!, x0, lcon = l_bound, ucon = u_bound)
   reg_nlp = RegularizedNLPModel(nlp, h, selected)
-  stats = R2(
+  stats = iR2(
     reg_nlp,
     x = x0,
     atol = options.ϵa,
@@ -281,13 +287,13 @@ function R2(
     η1 = options.η1,
     η2 = options.η2,
     ν = options.ν,
-    γ = options.γ;
-    kwargs...,
+    γ = options.γ,
   )
   outdict = Dict(
     :Fhist => stats.solver_specific[:Fhist],
     :Hhist => stats.solver_specific[:Hhist],
     :Chist => stats.solver_specific[:SubsolverCounter],
+    :ItersProx => stats.solver_specific[:ItersProx],
     :NonSmooth => h,
     :status => stats.status,
     :fk => stats.solver_specific[:smooth_obj],
@@ -298,21 +304,27 @@ function R2(
   return stats.solution, stats.iter, outdict
 end
 
-function R2(reg_nlp::AbstractRegularizedNLPModel; kwargs...)
+function iR2(reg_nlp::AbstractRegularizedNLPModel; kwargs...)
+
+  # if h has exact prox, switch to R2 
+  # if !(shifted(reg_nlp.h, reg_nlp.model.meta.x0) isa InexactShiftedProximableFunction)
+  #   @warn "h has exact prox, switching to R2"
+  #   return R2(reg_nlp; kwargs...)
+  # end
+
   kwargs_dict = Dict(kwargs...)
   max_iter = pop!(kwargs_dict, :max_iter, 10000)
-  solver = R2Solver(reg_nlp, max_iter = max_iter)
-  stats = GenericExecutionStats(reg_nlp.model) # TODO: change this to `stats = RegularizedExecutionStats(reg_nlp)` when FHist etc. is ruled out.
-  cb = pop!(
-    kwargs_dict,
-    :callback,
+
+  solver = iR2Solver(reg_nlp, max_iter = max_iter)
+  stats = GenericExecutionStats(reg_nlp.model)
+  cb =
     (nlp, solver, stats) -> begin
       solver.Fobj_hist[stats.iter + 1] = stats.solver_specific[:smooth_obj]
       solver.Hobj_hist[stats.iter + 1] = stats.solver_specific[:nonsmooth_obj]
       solver.Complex_hist[stats.iter + 1] += 1
-    end,
-  )
-  solve!(solver, reg_nlp, stats; callback = cb, max_iter = max_iter, kwargs...)
+    end
+
+  solve!(solver, reg_nlp, stats; callback = cb, max_iter = max_iter, kwargs_dict...)
   set_solver_specific!(stats, :Fhist, solver.Fobj_hist[1:(stats.iter + 1)])
   set_solver_specific!(stats, :Hhist, solver.Hobj_hist[1:(stats.iter + 1)])
   set_solver_specific!(stats, :SubsolverCounter, solver.Complex_hist[1:(stats.iter + 1)])
@@ -320,7 +332,7 @@ function R2(reg_nlp::AbstractRegularizedNLPModel; kwargs...)
 end
 
 function SolverCore.solve!(
-  solver::R2Solver{T},
+  solver::iR2Solver{T},
   reg_nlp::AbstractRegularizedNLPModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
@@ -350,9 +362,18 @@ function SolverCore.solve!(
   # Make sure ψ has the correct shift 
   shift!(solver.ψ, xk)
 
-  ∇fk = solver.∇fk
+  # ∇fk = solver.∇fk
   mν∇fk = solver.mν∇fk
   ψ = solver.ψ
+  κξ = one(T)
+  dualGap = zero(T)
+  if ψ isa InexactShiftedProximableFunction
+    let ctx = ψ.h.context
+      κξ = ctx.κξ
+      dualGap = ctx.dualGap
+    end
+  end
+
   xkn = solver.xkn
   s = solver.s
   has_bnds = solver.has_bnds
@@ -367,8 +388,8 @@ function SolverCore.solve!(
   improper = false
   hk = @views h(xk[selected])
   if hk == Inf
-    verbose > 0 && @info "R2: finding initial guess where nonsmooth term is finite"
-    prox!(xk, h, xk, one(eltype(x0)))
+    verbose > 0 && @info "iR2: finding initial guess where nonsmooth term is finite"
+    prox!(xk, h, xk, one(eltype(xk)))
     hk = @views h(xk[selected])
     hk < Inf || error("prox computation must be erroneous")
     verbose > 0 && @debug "R2: found point where h has value" hk
@@ -377,8 +398,8 @@ function SolverCore.solve!(
 
   if verbose > 0
     @info log_header(
-      [:iter, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :arrow],
-      [Int, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Char],
+      [:iter, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :dualgap, :arrow],
+      [Int, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Char],
       hdr_override = Dict{Symbol, String}(   # TODO: Add this as constant dict elsewhere
         :iter => "iter",
         :fx => "f(x)",
@@ -388,6 +409,7 @@ function SolverCore.solve!(
         :σ => "σ",
         :normx => "‖x‖",
         :norms => "‖s‖",
+        :objgap => "dualGap_iR2",
         :arrow => " ",
       ),
       colsep = 1,
@@ -401,8 +423,8 @@ function SolverCore.solve!(
   sqrt_ξ_νInv = one(T)
 
   fk = obj(nlp, xk)
-  grad!(nlp, xk, ∇fk)
-  @. mν∇fk = -ν * ∇fk
+  grad!(nlp, xk, solver.∇fk)
+  @. mν∇fk = -ν * solver.∇fk
 
   set_iter!(stats, 0)
   start_time = time()
@@ -411,10 +433,12 @@ function SolverCore.solve!(
   set_solver_specific!(stats, :smooth_obj, fk)
   set_solver_specific!(stats, :nonsmooth_obj, hk)
 
-  φk(d) = dot(∇fk, d)
+  φk(d) = dot(solver.∇fk, d)
   mk(d)::T = φk(d) + ψ(d)::T
 
+  update_prox_context!(solver, stats, ψ)
   prox!(s, ψ, mν∇fk, ν)
+
   mks = mk(s)
 
   ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
@@ -422,10 +446,12 @@ function SolverCore.solve!(
   sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
   atol += rtol * sqrt_ξ_νInv # make stopping test absolute and relative
 
-  solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol)
-  (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
-    error("R2: prox-gradient step should produce a decrease but ξ = $(ξ)")
+  solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
+  (ξ < 0 && sqrt_ξ_νInv > neg_tol) && error(
+    "iR2: first prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)",
+  )
 
+  set_solver_specific!(stats, :xi, sqrt_ξ_νInv)
   set_status!(
     stats,
     get_status(
@@ -467,6 +493,7 @@ function SolverCore.solve!(
           σk,
           norm(xk),
           norm(s),
+          dualGap,
           (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
         ],
         colsep = 1,
@@ -481,7 +508,7 @@ function SolverCore.solve!(
       end
       fk = fkn
       hk = hkn
-      grad!(nlp, xk, ∇fk)
+      grad!(nlp, xk, solver.∇fk)
       shift!(ψ, xk)
     end
 
@@ -493,7 +520,7 @@ function SolverCore.solve!(
     end
 
     ν = 1 / σk
-    @. mν∇fk = -ν * ∇fk
+    @. mν∇fk = -ν * solver.∇fk
 
     set_objective!(stats, fk + hk)
     set_solver_specific!(stats, :smooth_obj, fk)
@@ -501,15 +528,20 @@ function SolverCore.solve!(
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
 
+    # prepare callback context and pointer to callback function
+    update_prox_context!(solver, stats, ψ)
     prox!(s, ψ, mν∇fk, ν)
     mks = mk(s)
 
     ξ = hk - mks + max(1, abs(hk)) * 10 * eps()
-    sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
-    solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol)
-    (ξ < 0 && sqrt_ξ_νInv > neg_tol) &&
-      error("R2: prox-gradient step should produce a decrease but ξ = $(ξ)")
 
+    sqrt_ξ_νInv = ξ ≥ 0 ? sqrt(ξ / ν) : sqrt(-ξ / ν)
+    solved = (ξ < 0 && sqrt_ξ_νInv ≤ neg_tol) || (ξ ≥ 0 && sqrt_ξ_νInv ≤ atol * √κξ)
+    (ξ < 0 && sqrt_ξ_νInv > neg_tol) && error(
+      "iR2: prox-gradient step should produce a decrease but ξ = $(ξ) and sqrt_ξ_νInv = $(sqrt_ξ_νInv) > $(neg_tol)",
+    )
+
+    set_solver_specific!(stats, :xi, sqrt_ξ_νInv)
     set_status!(
       stats,
       get_status(
@@ -528,7 +560,6 @@ function SolverCore.solve!(
 
     done = stats.status != :unknown
   end
-
   if verbose > 0 && stats.status == :first_order
     @info log_row(
       Any[
@@ -540,39 +571,17 @@ function SolverCore.solve!(
         σk,
         norm(xk),
         norm(s),
+        dualGap,
         (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
       ],
       colsep = 1,
     )
-    @info "R2: terminating with √(ξ/ν) = $(sqrt_ξ_νInv)"
+    @info "iR2: terminating with √(ξ/ν) = $(sqrt_ξ_νInv)"
   end
 
+  if ψ isa InexactShiftedProximableFunction
+    set_solver_specific!(stats, :ItersProx, ψ.h.context.prox_stats[3])
+  end
   set_solution!(stats, xk)
-  set_residuals!(stats, zero(eltype(xk)), sqrt_ξ_νInv)
   return stats
-end
-
-function get_status(
-  reg_nlp::M;
-  elapsed_time = 0.0,
-  iter = 0,
-  optimal = false,
-  improper = false,
-  max_eval = Inf,
-  max_time = Inf,
-  max_iter = Inf,
-) where {M <: AbstractRegularizedNLPModel}
-  if optimal
-    :first_order
-  elseif improper
-    :improper
-  elseif iter > max_iter
-    :max_iter
-  elseif elapsed_time > max_time
-    :max_time
-  elseif neval_obj(reg_nlp.model) > max_eval && max_eval > -1
-    :max_eval
-  else
-    :unknown
-  end
 end

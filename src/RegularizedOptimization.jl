@@ -4,11 +4,13 @@ module RegularizedOptimization
 using LinearAlgebra, Logging, Printf
 
 # external dependencies
-using ProximalOperators, TSVD
+using Arpack, ProximalOperators
 
 # dependencies from us
 using LinearOperators,
-  NLPModels, NLPModelsModifiers, RegularizedProblems, ShiftedProximalOperators, SolverCore
+  NLPModels, NLPModelsModifiers, RegularizedProblems, ShiftedProximalOperators, SolverCore, ProxTV
+# IRBP
+using Percival: AugLagModel, update_y!, update_μ!
 
 include("utils.jl")
 include("input_struct.jl")
@@ -20,5 +22,11 @@ include("TRDH_alg.jl")
 include("R2_alg.jl")
 include("LM_alg.jl")
 include("LMTR_alg.jl")
+include("R2DH.jl")
+include("R2NModel.jl")
+include("iR2_alg.jl")
+include("R2N.jl")
+include("AL_alg.jl")
+include("iR2N.jl")
 
 end  # module RegularizedOptimization

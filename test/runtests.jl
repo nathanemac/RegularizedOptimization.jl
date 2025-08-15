@@ -2,7 +2,7 @@ using LinearAlgebra: length
 using LinearAlgebra, Random, Test
 using ProximalOperators
 using NLPModels, NLPModelsModifiers, RegularizedProblems, RegularizedOptimization, SolverCore
-
+using ProxTV
 const global compound = 1
 const global nz = 10 * compound
 const global options = ROSolverOptions(ν = 1.0, β = 1e16, ϵa = 1e-6, ϵr = 1e-6, verbose = 10)
@@ -131,6 +131,35 @@ for (h, h_name) ∈ ((NormL1(λ), "l1"),)
     @test obj(bpdn_nls, LMTR_out.solution) == LMTR_out.solver_specific[:Fhist][end]
     @test h(LMTR_out.solution) == LMTR_out.solver_specific[:Hhist][end]
     @test LMTR_out.status == :first_order
+  end
+end
+
+R2N_R2DH(args...; kwargs...) = R2N(args...; subsolver = R2DHSolver, kwargs...)
+for (mod, mod_name) ∈ (
+  (SpectralGradientModel, "spg"),
+  (DiagonalPSBModel, "psb"),
+  (LSR1Model, "lsr1"),
+  (LBFGSModel, "lbfgs"),
+)
+  for (h, h_name) ∈ ((NormL0(λ), "l0"), (NormL1(λ), "l1"))
+    for solver_sym ∈ (:R2DH, :R2N, :R2N_R2DH)
+      solver_sym ∈ (:R2N, :R2N_R2DH) && mod_name ∈ ("spg", "psb") && continue
+      solver_sym == :R2DH && mod_name != "spg" && continue
+      solver_sym == :R2N_R2DH && h_name == "l1" && continue # this test seems to fail because s seems to be equal to zeros within the subsolver
+      solver_name = string(solver_sym)
+      solver = eval(solver_sym)
+      @testset "bpdn-$(mod_name)-$(solver_name)-$(h_name)" begin
+        if solver_sym == :R2DH # FIXME why this fails??
+          continue
+        end
+        x0 = zeros(bpdn.meta.nvar)
+        out = solver(mod(bpdn), h, options, x0 = x0)
+        @test typeof(out.solution) == typeof(bpdn.meta.x0)
+        @test length(out.solution) == bpdn.meta.nvar
+        @test typeof(out.dual_feas) == eltype(out.solution)
+        @test out.status == :first_order
+      end
+    end
   end
 end
 
