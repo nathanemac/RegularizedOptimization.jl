@@ -285,8 +285,8 @@ function SolverCore.solve!(
 
   if verbose > 0
     @info log_header(
-      [:outer, :inner, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :normB, :arrow],
-      [Int, Int, T, T, T, T, T, T, T, T, Char],
+      [:outer, :inner, :fx, :hx, :xi, :ρ, :σ, :normx, :norms, :normB, :prec, :arrow],
+      [Int, Int, T, T, T, T, T, T, T, T, T, Char],
       hdr_override = Dict{Symbol, String}(
         :fx => "f(x)",
         :hx => "h(x)",
@@ -305,8 +305,14 @@ function SolverCore.solve!(
 
   σk = max(1 / ν, σmin)
 
-  fk = obj(nlp, xk) #TODO : recompute if needed??
-  grad!(nlp, xk, solver.∇fk)
+  # build inexact nlp model
+  prec = T(1e-12)  # initialize precision for logging
+  data, simulate, resid, misfit, x0 =
+    RegularizedProblems.FH_smooth_term(abstol = prec, reltol = prec)
+  inexact_nlp = LBFGSModel(ADNLPModel(misfit, ones(5), matrix_free = true))
+
+  fk = obj(inexact_nlp, xk)
+  grad!(inexact_nlp, xk, solver.∇fk)
   ∇fk⁻ .= solver.∇fk
 
   quasiNewtTest = isa(nlp, QuasiNewtonModel)
@@ -373,6 +379,16 @@ function SolverCore.solve!(
   done = stats.status != :unknown
 
   while !done
+
+    # rebuild nlp model - exclude from timing
+    # !!! NLP is also used for hess_op in the subsolver #TODO
+    current_time = time() - start_time  # save current elapsed time
+    prec = 1e-12 + (stats.iter / 1000) * (1e-15 - 1e-12) # prec = 1e-12 for first iteration, 1e-15 for 1000th iteration
+    data, simulate, resid, misfit, x0 =
+      RegularizedProblems.FH_smooth_term(abstol = prec, reltol = prec)
+    inexact_nlp = LBFGSModel(ADNLPModel(misfit, ones(5), matrix_free = true))
+    start_time = time() - current_time  # restart timing from where we left off
+
     sub_atol = stats.iter == 0 ? 1.0e-3 : min(sqrt_ξ1_νInv^(1.5), sqrt_ξ1_νInv * 1e-3)
 
     solver.subpb.model.σ = σk
@@ -401,7 +417,7 @@ function SolverCore.solve!(
     end
 
     xkn .= xk .+ s
-    fkn = obj(nlp, xkn)
+    fkn = obj(inexact_nlp, xkn)
     hkn = @views h(xkn[selected])
     mks = mk(s)
 
@@ -438,12 +454,13 @@ function SolverCore.solve!(
           norm(xk),
           norm(s),
           λmax,
+          prec,
           (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
         ],
         colsep = 1,
       )
 
-    if η1 ≤ ρk < Inf
+    if η1 ≤ ρk < Inf # success
       xk .= xkn
       if has_bnds
         @. l_bound_m_x = l_bound - xk
@@ -455,7 +472,7 @@ function SolverCore.solve!(
       hk = hkn
 
       shift!(ψ, xk)
-      grad!(nlp, xk, solver.∇fk)
+      grad!(inexact_nlp, xk, solver.∇fk)
 
       if quasiNewtTest
         @. ∇fk⁻ = solver.∇fk - ∇fk⁻
@@ -469,11 +486,11 @@ function SolverCore.solve!(
       ∇fk⁻ .= solver.∇fk
     end
 
-    if η2 ≤ ρk < Inf
+    if η2 ≤ ρk < Inf # very successful
       σk = max(σk / γ, σmin)
     end
 
-    if ρk < η1 || ρk == Inf
+    if ρk < η1 || ρk == Inf # unsuccessful
       σk = σk * γ
     end
 
@@ -532,6 +549,7 @@ function SolverCore.solve!(
         norm(xk),
         norm(s),
         λmax,
+        prec,
         (η2 ≤ ρk < Inf) ? "↘" : (ρk < η1 ? "↗" : "="),
       ],
       colsep = 1,
