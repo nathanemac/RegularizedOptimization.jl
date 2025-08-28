@@ -306,13 +306,17 @@ function SolverCore.solve!(
   σk = max(1 / ν, σmin)
 
   # build inexact nlp model
-  prec = T(1e-12)  # initialize precision for logging
-  data, simulate, resid, misfit, x0 =
-    RegularizedProblems.FH_smooth_term(abstol = prec, reltol = prec)
-  inexact_nlp = LBFGSModel(ADNLPModel(misfit, ones(5), matrix_free = true))
+  prec = T(1e-2)  # initialize precision for logging
+  data, simulate, resid, misfit, x0 = RegularizedProblems.FH_smooth_term()
+  misfit_prec = p -> misfit(p, prec, prec)
+  inexact_nlp = LBFGSModel(ADNLPModel(misfit_prec, 1 / 10 * ones(5), matrix_free = true))
 
+  # !! modify line below to use inexact or exact nlp
   fk = obj(inexact_nlp, xk)
+
+  # !! modify line below to use inexact or exact nlp
   grad!(inexact_nlp, xk, solver.∇fk)
+
   ∇fk⁻ .= solver.∇fk
 
   quasiNewtTest = isa(nlp, QuasiNewtonModel)
@@ -381,12 +385,10 @@ function SolverCore.solve!(
   while !done
 
     # rebuild nlp model - exclude from timing
-    # !!! NLP is also used for hess_op in the subsolver #TODO
     current_time = time() - start_time  # save current elapsed time
-    prec = 1e-12 + (stats.iter / 1000) * (1e-15 - 1e-12) # prec = 1e-12 for first iteration, 1e-15 for 1000th iteration
-    data, simulate, resid, misfit, x0 =
-      RegularizedProblems.FH_smooth_term(abstol = prec, reltol = prec)
-    inexact_nlp = LBFGSModel(ADNLPModel(misfit, ones(5), matrix_free = true))
+    prec = max(1e-2 * exp(log(1e-14 / 1e-2) * (stats.iter / 500)), 1e-14)
+    misfit_prec = p -> misfit(p, prec, prec)
+    inexact_nlp = LBFGSModel(ADNLPModel(misfit_prec, 1 / 10 * ones(5), matrix_free = true))
     start_time = time() - current_time  # restart timing from where we left off
 
     sub_atol = stats.iter == 0 ? 1.0e-3 : min(sqrt_ξ1_νInv^(1.5), sqrt_ξ1_νInv * 1e-3)
@@ -417,7 +419,10 @@ function SolverCore.solve!(
     end
 
     xkn .= xk .+ s
+
+    # !! modify line below to use inexact or exact nlp
     fkn = obj(inexact_nlp, xkn)
+
     hkn = @views h(xkn[selected])
     mks = mk(s)
 
@@ -472,6 +477,8 @@ function SolverCore.solve!(
       hk = hkn
 
       shift!(ψ, xk)
+
+      # !! modify line below to use inexact or exact nlp
       grad!(inexact_nlp, xk, solver.∇fk)
 
       if quasiNewtTest
