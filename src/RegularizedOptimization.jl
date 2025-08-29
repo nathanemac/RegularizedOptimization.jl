@@ -8,7 +8,13 @@ using Arpack, ProximalOperators
 
 # dependencies from us
 using LinearOperators,
-  NLPModels, NLPModelsModifiers, RegularizedProblems, ShiftedProximalOperators, SolverCore, ProxTV
+  ADNLPModels,
+  NLPModels,
+  NLPModelsModifiers,
+  RegularizedProblems,
+  ShiftedProximalOperators,
+  SolverCore,
+  ProxTV
 # IRBP
 using Percival: AugLagModel, update_y!, update_μ!
 
